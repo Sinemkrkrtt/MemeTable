@@ -1,361 +1,225 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Image, StatusBar, ScrollView, Dimensions, Animated } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Image, StatusBar, ScrollView, Dimensions, Animated, Modal } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { signOut } from 'firebase/auth';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { styles, palet } from './HomeScreenStyles';
 
-// 🔥 SADECE NUNITO AİLESİ (Kaba Fredoka'yı sildik, premium uyum geldi)
+// 🔥 NUNITO AİLESİ
 import { useFonts } from 'expo-font';
 import { 
   Nunito_600SemiBold, 
   Nunito_700Bold, 
   Nunito_800ExtraBold, 
   Nunito_900Black,
-  Nunito_800ExtraBold_Italic // 🔥 İtalik ve daha kibar versiyonu ekledik
+  Nunito_800ExtraBold_Italic 
 } from '@expo-google-fonts/nunito';
 
 const { width, height } = Dimensions.get('window');
 
-const palet = {
-  vibrant: '#FF69EB',
-  soft: '#FF86C8',
-  peach: '#FFA3A5',
-  sand: '#FFBF81',
-  yellow: '#FFDC5E',
-  darkText: '#4A1D3A',
-  bg: '#FFFFFF'
-};
-
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ navigation, route }) {
   const [nickname, setNickname] = useState("Meme Kralı");
-  
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scalePress = useRef(new Animated.Value(1)).current;
 
-  // HomeScreen içine ekle:
-const scalePress = useRef(new Animated.Value(1)).current;
+  // Hediye State'leri
+  const [wonHearts, setWonHearts] = useState(3); 
+  const [isBoxOpened, setIsBoxOpened] = useState(false);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isOpened, setIsOpened] = useState(false); 
+  const { myName, myAvatarSeed } = route?.params || { myName: 'Sen', myAvatarSeed: 'Sinem' };
+  
+  // Animasyon Değerleri
+  const boxAnim = useRef(new Animated.Value(1)).current; 
+  const rewardOpacity = useRef(new Animated.Value(0)).current;
 
-const onPressIn = () => {
-  Animated.spring(scalePress, { toValue: 0.96, useNativeDriver: true }).start();
-};
-const onPressOut = () => {
-  Animated.spring(scalePress, { toValue: 1, friction: 3, tension: 40, useNativeDriver: true }).start();
-};
-
-
- let [fontsLoaded] = useFonts({
-    Nunito_600SemiBold,
-    Nunito_700Bold,
-    Nunito_800ExtraBold,
-    Nunito_900Black,
-    Nunito_800ExtraBold_Italic, // Yazımın tam böyle olması lazım
+  let [fontsLoaded] = useFonts({
+    Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold, Nunito_900Black, Nunito_800ExtraBold_Italic,
   });
+
+  const onPressIn = () => Animated.spring(scalePress, { toValue: 0.95, useNativeDriver: true }).start();
+  const onPressOut = () => Animated.spring(scalePress, { toValue: 1, friction: 4, tension: 40, useNativeDriver: true }).start();
+
+  // ⚡ TEK TIKLA HEDİYEYİ AÇAN FONKSİYON
+  const handleInstantOpen = () => {
+    setIsModalVisible(true); 
+    setIsOpened(true);      
+    
+    rewardOpacity.setValue(0);
+    boxAnim.setValue(0.5); 
+    
+    Animated.parallel([
+      Animated.timing(rewardOpacity, { toValue: 1, duration: 800, useNativeDriver: true }),
+      Animated.spring(boxAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true })
+    ]).start();
+  };
 
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-    
     Animated.timing(fadeAnim, { toValue: 1, duration: 1000, useNativeDriver: true }).start();
-
     const fetchUserData = async () => {
       const user = auth.currentUser;
       if (user) {
-        if (user.displayName) setNickname(user.displayName);
-        else {
-          const userSnap = await getDoc(doc(db, "users", user.uid));
-          if (userSnap.exists()) setNickname(userSnap.data().nickname);
-        }
+        const userSnap = await getDoc(doc(db, "users", user.uid));
+        if (userSnap.exists()) setNickname(userSnap.data().nickname);
       }
     };
     fetchUserData();
   }, []);
 
-  if (!fontsLoaded) {
-    return null; 
-  }
+  if (!fontsLoaded) return null; 
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      
       <SafeAreaView style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* 🛸 ESTETİK & UYUMLU HEADER */}
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.greetingTextCreative}>
-              Selam <Text style={styles.boldNameCreative}>{nickname}!</Text>
-            </Text>
-          </View>
-
-          <TouchableOpacity style={styles.creativeLogout} onPress={() => signOut(auth)}>
-            <Ionicons name="power" size={18} color={palet.peach} style={styles.logoutIcon} />
-          </TouchableOpacity>
-        </View>
-
-        {/* 🏎️ DEV ESTETİK LOGO */}
-        <Animated.View style={[styles.logoArea, { opacity: fadeAnim }]}>
-          <Image 
-            source={require('../../assets/homeLogo.png')} 
-            style={styles.homeLogoLarge}
-            resizeMode="contain"
-          />
-        </Animated.View>
-
-        {/* 🧩 MODERN AI GRID */}
-        <View style={styles.gridContainer}>
           
-          {/* SOL: HIZLI OYNA */}
-          <TouchableOpacity 
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate('RoomScreen', { mode: 'public' })}
-            style={styles.bigActionCard}
-          >
-            <LinearGradient 
-              colors={[palet.vibrant, palet.peach]} 
-              start={{ x: 0, y: 0 }} 
-              end={{ x: 1, y: 1 }} 
-              style={styles.cardInner}
-            >
-             <View style={styles.cardHeader}>
-                <Ionicons name="flash" size={30} color="white" />
-                
-                {/* 🔥 Oku View içine aldık ve arrow-up ile 45 derece sağa yatırdık */}
-                <View style={styles.topRightArrow}>
-                  <Ionicons name="arrow-up" size={22} color="white" />
+          {/* HEADER */}
+          <View style={styles.headerRow}>
+            <View style={styles.sleekVault}>
+              <View style={styles.vaultItem}><Ionicons name="layers" size={18} color="#FFD700" /><Text style={styles.vaultValue}>1,250</Text></View>
+              <View style={styles.vaultSeparator} />
+              <View style={styles.vaultItem}><Ionicons name="diamond" size={18} color="#00E5FF" /><Text style={[styles.vaultValue, { color: '#000000' }]}>12</Text></View>
+            </View>
+            <TouchableOpacity style={styles.creativeLogout} onPress={() => signOut(auth)}>
+              <Ionicons name="power" size={20} color={palet.peach} style={styles.logoutIcon} />
+            </TouchableOpacity>
+          </View>
+
+          {/* LOGO */}
+          <Animated.View style={[styles.logoArea, { opacity: fadeAnim }]}>
+            <Image source={require('../../assets/homeLogo.png')} style={styles.homeLogoLarge} resizeMode="contain" />
+          </Animated.View>
+
+          {/* GRID */}
+          <View style={styles.gridContainer}>
+            <Animated.View style={{ flex: 1.2, transform: [{ scale: scalePress }] }}>
+              <TouchableOpacity activeOpacity={0.9} onPressIn={onPressIn} onPressOut={onPressOut} onPress={() => navigation.navigate('RoomScreen', { mode: 'public' })} style={styles.bigActionCard}>
+                <LinearGradient colors={[palet.vibrant, palet.peach]} style={styles.cardInner}>
+                  <View style={styles.cardHeader}><Ionicons name="flash" size={30} color="white" /><View style={styles.topRightArrow}><Ionicons name="arrow-up" size={22} color="white" /></View></View>
+                  <View><Text style={styles.cardTitleBig}>HIZLI{"\n"}OYNA</Text><Text style={styles.cardSubTitle}>ANINDA EŞLEŞ</Text></View>
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
+            <View style={styles.rightColumn}>
+              <TouchableOpacity style={styles.smallActionCard} onPress={() => navigation.navigate('LobbyScreen', { isHost: true })}>
+                <LinearGradient colors={[palet.peach, palet.sand]} style={styles.cardInner}>
+                  <View style={styles.cardHeader}><Ionicons name="add" size={26} color="white" />
+                  <View style={styles.topRightArrow}><Ionicons name="arrow-up" size={22} color="white" /></View></View>
+                  <Text style={styles.cardTitleSmall}>ODA KUR</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.smallActionCard} onPress={() => navigation.navigate('JoinRoom')}>
+                <LinearGradient colors={[palet.sand, palet.yellow]} style={styles.cardInner}>
+                  <View style={styles.cardHeader}><Ionicons name="qr-code" size={26} color="white" />
+                  <View style={styles.topRightArrow}><Ionicons name="arrow-up" size={22} color="white" /></View></View>
+                  <Text style={styles.cardTitleSmall}>KATIL</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* MISSION SECTION */}
+          <View style={styles.historySection}>
+            <View style={styles.missionHeaderRow}>
+              <View style={styles.titleWithBadge}>
+                <LinearGradient colors={[palet.vibrant, '#B832FA']} style={styles.missionIconBadge}><Ionicons name="sparkles" size={14} color="white" /></LinearGradient>
+                <View><Text style={styles.missionMainTitle}>Günün Görevi</Text><Text style={styles.missionSubTitle}>Paketi açmak için {3 - wonHearts} maç kaldı</Text></View>
+              </View>
+              <View style={styles.premiumTimerBadge}><Ionicons name="time" size={12} color={palet.vibrant} /><Text style={styles.premiumTimerText}>14:23:05</Text></View>
+            </View>
+
+            <View style={styles.questCard}>
+              <View style={styles.questMainRow}>
+                <View style={[styles.questIconBox, { backgroundColor: '#FFF0F5' }]}><Ionicons name="heart" size={24} color={palet.vibrant} /></View>
+                <View style={styles.questContent}>
+                  <Text style={styles.questText}>3 Maç Kazan, Paketi Kap!</Text>
+                  <View style={styles.progressRow}>
+                    <View style={styles.progressTrack}><LinearGradient colors={[palet.vibrant, palet.peach]} style={[styles.progressFill, { width: `${(wonHearts / 3) * 100}%` }]} /></View>
+                    <Text style={styles.currentProgressText}>{wonHearts}/3</Text>
+                  </View>
                 </View>
-                
+
+                {/* 🎁 GÜNCEL HEDİYE PAKETİ */}
+                <View style={styles.giftWrapper}>
+                  {wonHearts < 3 ? (
+                    <View style={styles.lockedGift}><Ionicons name="gift-outline" size={24} color="#DDD" /><Text style={styles.lockedText}>KİLİTLİ</Text></View>
+                  ) : !isBoxOpened ? (
+                    <TouchableOpacity onPress={handleInstantOpen}> 
+                      <View>
+                        <LinearGradient colors={['#FFBF81','#FFD700','#FFA3A5', '#FF86C8','#FF69EB','#D22FFB']} style={styles.activeGift}><Ionicons name="gift" size={28} color="white" /></LinearGradient>
+                        <Text style={styles.openMeText}>AÇ BENİ!</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.openedGift}><Text style={styles.rewardEmoji}>🃏</Text><Text style={styles.rewardSub}>SWAP!</Text></View>
+                  )}
+                </View>
               </View>
-              <View>
-                <Text style={styles.cardTitleBig}>HIZLI{"\n"}OYNA</Text>
-                <Text style={styles.cardSubTitle}>ANINDA EŞLEŞ</Text>
-              </View>
-            </LinearGradient>
+            </View>
+          </View>
+
+          {/* TEST BUTONU (Test ederken işine yarasın diye bıraktım, canlıya alırken silersin) */}
+          <TouchableOpacity style={{ backgroundColor: '#F0F0F0', padding: 10, borderRadius: 10, marginTop: 10, alignItems: 'center' }} onPress={() => setWonHearts(prev => (prev >= 3 ? 0 : prev + 1))}>
+            <Text style={{ fontFamily: 'Nunito_800ExtraBold', color: palet.vibrant }}>Kalp Ekle ({wonHearts}/3)</Text>
           </TouchableOpacity>
-
-          {/* SAĞ: ODA KUR & KATIL */}
-          <View style={styles.rightColumn}>
-            
-            {/* ODA KUR */}
-            <TouchableOpacity 
-              style={styles.smallActionCard} 
-              onPress={() => navigation.navigate('LobbyScreen', { isHost: true })}
-            >
-              <LinearGradient 
-                colors={[palet.peach, palet.sand]} 
-                start={{ x: 0, y: 0 }} 
-                end={{ x: 1, y: 1 }} 
-                style={styles.cardInner}
-              >
-                <View style={styles.cardHeader}>
-                  <Ionicons name="add" size={26} color="white" />
-                  
-                  {/* 🔥 İkonu bir View içine aldık ve döndürmeyi ona vereceğiz */}
-                  <View style={styles.topRightArrow}>
-                    <Ionicons name="arrow-up" size={22} color="white" />
-                  </View>
-                  
-                </View>
-                <Text style={styles.cardTitleSmall}>ODA KUR</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            {/* KATIL */}
-            <TouchableOpacity 
-              style={styles.smallActionCard} 
-              onPress={() => navigation.navigate('JoinRoom')}
-            >
-              <LinearGradient 
-                colors={[palet.sand, palet.yellow]} 
-                start={{ x: 0, y: 0 }} 
-                end={{ x: 1, y: 1 }} 
-                locations={[0.1, 0.7]} 
-                style={styles.cardInner}
-              >
-               <View style={styles.cardHeader}>
-                  <Ionicons name="qr-code" size={26} color="white" />
-                  
-                  {/* 🔥 Oku View içine aldık ve arrow-up ile 45 derece sağa yatırdık */}
-                  <View style={styles.topRightArrow}>
-                    <Ionicons name="arrow-up" size={22} color="white" />
-                  </View>
-                  
-                </View>
-                <Text style={styles.cardTitleSmall}>KATIL</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            
-          </View>
-        </View>
-
-        {/* 🎯 GÜNLÜK GÖREV */}
-        <View style={styles.historySection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Günlük Görevler</Text>
-            <View style={styles.timerBadge}>
-              <Ionicons name="time-outline" size={14} color={palet.peach} />
-              <Text style={styles.timerText}>14s 23d</Text>
-            </View>
-          </View>
-
-          <View style={styles.questRow}>
-            <View style={[styles.questIconBox, {backgroundColor: palet.peach}]}>
-              <Ionicons name="heart" size={22} color="white" />
-            </View>
-            
-            <View style={styles.questContent}>
-              <Text style={styles.questText}>3 farklı maçta kalp kazan!</Text>
-              
-              <View style={styles.progressRow}>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: '33%' }]} /> 
-                </View>
-                <Text style={styles.progressCount}>1/3</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity style={styles.rewardBox}>
-              <Text style={styles.rewardAmount}>+50</Text>
-              <Text style={styles.rewardEmoji}>🪙</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
         </ScrollView>
+
+        {/* 🌌 ULTRA ESTETİK GANİMET EKRANI */}
+        <Modal visible={isModalVisible} transparent={true} animationType="fade">
+          <View style={styles.modalOverlay}>
+            
+            {/* ✨ BURASI DEĞİŞTİ: Tıklanınca sistemi baştan başlatır */}
+            <TouchableOpacity 
+              style={styles.closeModalIcon} 
+              onPress={() => { 
+                setIsModalVisible(false); 
+                setIsOpened(false); 
+                setIsBoxOpened(false); // Kutuyu kapalıya çevir
+                setWonHearts(0);       // İlerlemeyi sıfırla
+              }}
+            >
+              <Ionicons name="close-outline" size={35} color="rgba(255,255,255,0.5)" />
+            </TouchableOpacity>
+
+            <View style={styles.lootMainStage}>
+              <Animated.View style={{ 
+                opacity: rewardOpacity, 
+                transform: [{ scale: boxAnim }, { translateY: 0 }], 
+                alignItems: 'center' 
+              }}>
+                
+                {/* 1. KATMAN: Arka Plan Büyük Işıma */}
+                <LinearGradient
+                  colors={['transparent', 'rgba(255, 105, 235, 0.2)', 'transparent']}
+                  style={styles.rewardAuraOuter}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                />
+
+                {/* 2. KATMAN: Odak Işığı */}
+                <View style={styles.rewardAuraCore} />
+
+                {/* 3. KATMAN: Obje (Joker) */}
+                <View style={styles.objectSpotlight}>
+                  <Text style={styles.rewardEmojiUltra}>🃏</Text>
+                </View>
+
+                {/* 4. KATMAN: Şık İsim Etiketi */}
+                <View style={styles.glassNameTag}>
+                  <Text style={styles.rarityTextSmall}>NADİR JOKER</Text>
+                  <Text style={styles.lootTitleText}>SWAP</Text>
+                </View>
+
+              </Animated.View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: palet.bg },
-  scrollContent: { paddingHorizontal: 25, paddingBottom: 30 },
-
-  // 🛸 Zarif Header Stilleri
-  headerRow: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginTop: 20,
-    marginBottom: -15 
-  },
-  headerLeft: { flex: 1 },
-  greetingTextCreative: { 
-    fontSize: 20, 
-    color: '#A0A0A0', 
-    fontFamily: 'Nunito_600SemiBold',
-    letterSpacing: 0.5
-  },
-boldNameCreative: { 
-    color: palet.vibrant, 
-    fontSize: 24,
-    // Önce özel fontu dene, bulamazsan sisteminkini italik yap
-    fontFamily: 'Nunito_800ExtraBold_Italic', 
-    fontStyle: 'italic', // 🔥 GARANTİ: Font yüklenmese bile sağa yatırır
-    letterSpacing: -0.5,
-   // Styles kısmında boldNameCreative'e ekle:
-textShadowColor: 'rgba(255, 105, 235, 0.5)',
-textShadowOffset: { width: 0, height: 0 },
-textShadowRadius: 10, // Parlama miktarını artırdık
-    
-  },
-
-  // 💎 Elmas Buton (Daha kibar boyutlarda)
-  creativeLogout: { 
-    width: 42, height: 42, borderRadius: 12, backgroundColor: 'white', 
-    justifyContent: 'center', alignItems: 'center', elevation: 4,
-    shadowColor: palet.peach, shadowOpacity: 0.6, shadowRadius: 6,
-    borderWidth: 1, borderColor: '#F8F8F8',
-    transform: [{ rotate: '45deg' }], marginRight: 5
-  },
-  logoutIcon: { transform: [{ rotate: '-45deg' }] },
-
-  // 🔥 Logo
-  logoArea: { 
-    width: '100%', height: 240, marginTop: 0, marginBottom: 10, 
-    justifyContent: 'center', alignItems: 'center',
-  },
-  homeLogoLarge: { width: '90%', height: '100%', borderRadius: 70 },
-
-  // 🧩 Grid Düzeni
-  gridContainer: { flexDirection: 'row', gap: 15 },
-  bigActionCard: { flex: 1.2, borderRadius: 32, overflow: 'hidden', elevation: 10, height: 210 },
-  rightColumn: { flex: 1, gap: 15 },
-  smallActionCard: { borderRadius: 24, overflow: 'hidden', elevation: 6, height: 97 },
-  
-  // 🛠️ Kart İçi Detaylar
-  cardInner: { flex: 1, padding: 18, justifyContent: 'space-between' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  topRightArrow: { transform: [{ rotate: '45deg' }], opacity: 0.8 },
-  
-  cardTitleBig: { 
-    color: 'white', 
-    fontSize: 26, 
-    fontFamily: 'Nunito_900Black', // Kaba olmayan, oturaklı kalınlık
-    letterSpacing: 1,
-    textShadowColor: 'rgba(0,0,0,0.1)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2
-  },
-  cardSubTitle: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 11,
-    letterSpacing: 2,
-    fontFamily: 'Nunito_800ExtraBold', 
-    marginTop: 4
-  },
-  cardTitleSmall: { 
-    color: 'white', 
-    fontSize: 16, 
-    fontFamily: 'Nunito_900Black',
-    letterSpacing: 0.5,
-  },
-
-  // 🎯 Quest Section
-  historySection: { marginTop: 35 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  
-  sectionTitle: { 
-    fontSize: 18, 
-    color: palet.darkText, 
-    fontFamily: 'Nunito_900Black',
-    letterSpacing: 0.2
-  },
-  
-  timerBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF0F5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 },
-  timerText: { 
-    color: palet.peach, 
-    fontSize: 12, 
-    fontFamily: 'Nunito_800ExtraBold'
-  },
-
-  questRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 16, borderRadius: 24, gap: 12, elevation: 4, shadowColor: palet.peach, shadowOpacity: 0.1, shadowRadius: 8 },
-  questIconBox: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  questContent: { flex: 1, justifyContent: 'center' },
-  
-  questText: { 
-    fontSize: 14, 
-    color: palet.darkText, 
-    marginBottom: 6,
-    fontFamily: 'Nunito_700Bold' 
-  },
-  
-  progressRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  progressTrack: { flex: 1, height: 6, backgroundColor: '#F0F0F0', borderRadius: 3, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: palet.vibrant, borderRadius: 3 },
-  progressCount: { 
-    fontSize: 11, 
-    color: '#AAA',
-    fontFamily: 'Nunito_800ExtraBold'
-  },
-
-  rewardBox: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF9E6', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: palet.yellow },
-  rewardAmount: { 
-    fontSize: 14, 
-    color: '#E5A900',
-    fontFamily: 'Nunito_900Black'
-  },
-  rewardEmoji: { fontSize: 14, marginTop: -2 }
-});

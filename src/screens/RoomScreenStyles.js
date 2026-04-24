@@ -2,14 +2,13 @@ import { StyleSheet } from 'react-native';
 
 export const styles = StyleSheet.create({
   
+  // --- ANA YAPI ---
   container: { flex: 1, backgroundColor: '#FFFFFF' },
   whiteBackground: { ...StyleSheet.absoluteFillObject, backgroundColor: '#FAFAFA' },
   tableContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: -30 },
 
-  announcementBox: { position: 'absolute', top: '40%', alignSelf: 'center', backgroundColor: '#53FFD1', paddingHorizontal: 40, paddingVertical: 20, borderRadius: 30, zIndex: 999, elevation: 30 },
-  announcementText: { color: 'white', fontSize: 28, fontWeight: '900', letterSpacing: 2 },
-
-  mainTableRim: { width: '82%', height: '78%', backgroundColor: '#FF86C8', borderRadius: 120, borderWidth: 8, borderColor: 'rgba(255, 255, 255, 0.9)', justifyContent: 'center', alignItems: 'center', elevation: 40, shadowColor: '#FF69EB', shadowOpacity: 0.45, shadowRadius: 35 },
+  // --- MASA & OYUNCULAR ---
+  mainTableRim: { width: '72%', height: '75%', backgroundColor: '#FF86C8', borderRadius: 120, borderWidth: 8, borderColor: 'rgba(255, 255, 255, 0.9)', justifyContent: 'center', alignItems: 'center', elevation: 40, shadowColor: '#FF69EB', shadowOpacity: 0.45, shadowRadius: 35 },
   tableSurface: { position: 'absolute', width: '95%', height: '92%', backgroundColor: '#FFF2F7', borderRadius: 100, justifyContent: 'center', alignItems: 'center', borderWidth: 4, borderColor: 'rgba(0, 0, 0, 0.04)', overflow: 'hidden' },
   roomTableLogo: { width: 340, height: 340, opacity: 0.18, resizeMode: 'contain', transform: [{ rotate: '-3deg' }, { scale: 1.05 }] },
 
@@ -20,6 +19,7 @@ export const styles = StyleSheet.create({
   nameBadge: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, marginTop: -14, borderWidth: 2, borderColor: '#FFFFFF', elevation: 10 },
   playerName: { color: '#FFFFFF', fontSize: 11, fontWeight: '900', letterSpacing: 1 },
 
+  // --- MERKEZ & DURUM KARTI ---
   centerArea: { alignItems: 'center', zIndex: 50 },
   situationCardWrapper: { position: 'absolute', top: -105 },
   premiumSituationCard: { width: 240, height: 160, backgroundColor: '#FFD1A3', borderRadius: 20, borderWidth: 4, borderColor: '#FFFFFF', elevation: 20 },
@@ -28,228 +28,45 @@ export const styles = StyleSheet.create({
   premiumHeaderCentered: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 5 },
   moodBadge: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.9)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12, elevation: 5 },
   moodLetter: { fontSize: 14, fontWeight: '900', letterSpacing: 2 },
-  premiumTimer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF69EB', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 15, gap: 6, elevation: 6 },
-  timerDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FFFFFF' },
-  premiumTimerText: { color: '#FFFFFF', fontWeight: '900', fontSize: 13, letterSpacing: 1 },
   premiumDivider: { height: 2, backgroundColor: '#FFFFFF', opacity: 0.8, marginBottom: 10 },
   premiumText: { color: '#FFFFFF', fontSize: 17, fontWeight: '900', textAlign: 'center', lineHeight: 24 },
 
+  // --- DUYURU BANNER'I ---
+  announcementBanner: { position: 'absolute', top: '42%', width: '100%', zIndex: 1000, alignItems: 'center', justifyContent: 'center' },
+  bannerGradient: { width: '100%', paddingVertical: 15, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(255, 255, 255, 0.3)' },
+  announcementText: { color: '#FFFFFF', fontSize: 22, fontWeight: '900', letterSpacing: 8, textShadowColor: 'rgba(0, 0, 0, 0.5)', textShadowRadius: 10 },
+
+  // --- ELİMİZDEKİ KARTLAR (DESTE) ---
   deckContainer: { position: 'absolute', bottom: -10, width: '100%', height: 160, alignItems: 'center' },
   deckCard: { position: 'absolute', width: 95, height: 135, borderRadius: 14, backgroundColor: '#FFFFFF', padding: 4, elevation: 15 },
   memeImage: { width: '100%', height: '100%', borderRadius: 12, backgroundColor: '#F3F4F6' },
   selectedBorder: { ...StyleSheet.absoluteFillObject, borderRadius: 16, borderWidth: 4, borderColor: '#FF69EB' },
- playButton: { 
-    position: 'absolute', 
-    top: -55, // Kartın biraz daha üzerinde fırlamış gibi durur
-    alignSelf: 'center', 
-    zIndex: 150,
-    elevation: 20,
-    shadowColor: '#FF69EB',
-    shadowOpacity: 1,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  playButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20, 
-    paddingVertical: 10, 
-    borderRadius: 25, 
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.9)', // Parlak beyaz çerçeve
-  },
-  playButtonText: { 
-    color: '#FFFFFF', 
-    fontWeight: '900', 
-    fontSize: 16,
-    letterSpacing: 2, 
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 3
-  },
-  votingArea: { marginTop: 20, alignItems: 'center' },
-  votingHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20, width: '100%' },
-  compactTimerBadge: { position: 'absolute', right: 40, backgroundColor: 'rgba(26, 26, 26, 0.8)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#FF69EB' },
-  compactTimerText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', fontFamily: 'monospace' },
-  votingRow: { flexDirection: 'row', gap: 12, justifyContent: 'center' },
-  phaseHeaderContainer: { alignItems: 'center', justifyContent: 'center' },
-  phaseSubtitle: { color: 'rgba(255, 255, 255, 0.7)', fontSize: 10, fontWeight: '800', letterSpacing: 4 },
-  phaseTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', letterSpacing: 1 },
-  phaseTitleWinner: { color: '#FFDC5E' },
+  playButton: { position: 'absolute', top: -55, alignSelf: 'center', zIndex: 150, elevation: 20, shadowColor: '#FF69EB', shadowOpacity: 1, shadowRadius: 20, shadowOffset: { width: 0, height: 0 } },
+  playButtonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 25, borderWidth: 2, borderColor: 'rgba(255, 255, 255, 0.9)' },
+  playButtonText: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, letterSpacing: 2, textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 3 },
+
+  // --- YENİ NESİL SAYAÇ (PRO TIMER) ---
+  proTimerContainer: { width: 100, height: 100, justifyContent: 'center', alignItems: 'center' },
+  staticRing: { position: 'absolute', width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: 'rgba(255, 105, 235, 0.15)' },
+  timerRing: { position: 'absolute', width: 90, height: 90, borderRadius: 45, borderWidth: 5, borderColor: 'transparent', shadowColor: '#FF69EB', shadowOpacity: 0.8, shadowRadius: 10 },
+  modernTimerContent: { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(255, 255, 255, 0.4)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.6)' },
+  proTimerText: { fontSize: 32, fontWeight: '900', color: '#FF69EB', textShadowColor: 'rgba(255, 105, 235, 0.5)', textShadowRadius: 10 },
+
+  // --- OYLAMA ALANI (VOTING PRO) ---
+  votingAreaPro: { alignItems: 'center', justifyContent: 'center', width: '100%', paddingTop: 40 },
+  proProgressBarContainer: { position: 'absolute', top: 20, width: '60%', height: 10, backgroundColor: 'rgba(0, 0, 0, 0.1)', borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.3)' },
+  proProgressBar: { height: '100%', borderRadius: 10, shadowColor: '#FF69EB', shadowOpacity: 0.9, shadowRadius: 8, elevation: 5 },
+  votingRowPro: { flexDirection: 'row', gap: 15, justifyContent: 'center', alignItems: 'center', marginTop: 20 },
   voteCardWrapper: { width: 100, height: 140, backgroundColor: '#FFFFFF', borderRadius: 10, padding: 3, borderWidth: 2, borderColor: '#FFFFFF', elevation: 15, overflow: 'hidden' },
   votedCardStyle: { borderColor: '#FFDC5E', transform: [{ scale: 1.1 }], shadowColor: '#FFDC5E', shadowOpacity: 0.8, shadowRadius: 15 },
   disabledVoteCard: { opacity: 0.6 },
   myCardOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   myCardText: { color: 'white', fontSize: 10, fontWeight: 'bold', marginTop: 4 },
   votedBadge: { position: 'absolute', bottom: -5, right: -5, backgroundColor: '#FFFFFF', borderRadius: 15, padding: 4, elevation: 10 },
-  nextRoundBtn: { marginTop: 25, backgroundColor: '#FF69EB', paddingHorizontal: 30, paddingVertical: 12, borderRadius: 25, borderWidth: 2, borderColor: '#FFFFFF', elevation: 12, shadowColor: '#FF69EB', shadowOpacity: 0.8, shadowRadius: 15 },
-  nextRoundBtnText: { color: 'white', fontWeight: '900', fontSize: 15, letterSpacing: 2 },
-  proTimerContainer: { 
-    width: 100, 
-    height: 100, 
-    justifyContent: 'center', 
-    alignItems: 'center',
-  },
-  staticRing: {
-    position: 'absolute',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    borderWidth: 3,
-    borderColor: 'rgba(255, 105, 235, 0.15)', // Çok daha ince ve zarif
-  },
-  timerRing: { 
-    position: 'absolute', 
-    width: 90, 
-    height: 90, 
-    borderRadius: 45, 
-    borderWidth: 5, 
-    borderColor: 'transparent',
-    // Neon glow efekti için:
-    shadowColor: '#FF69EB',
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-  },
-  modernTimerContent: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)', // Cam efekti (Şeffaf beyaz)
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
-  },
-  proTimerText: { 
-    fontSize: 32, // Sayıyı büyüttük
-    fontWeight: '900', 
-    color: '#FF69EB',
-    textShadowColor: 'rgba(255, 105, 235, 0.5)',
-    textShadowRadius: 10,
-  },
-  timerHintBadge: {
-    position: 'absolute',
-    bottom: -35,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)', // Siyah transparan badge
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  timerHintText: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 2,
-  },
-  announcementBanner: {
-    position: 'absolute',
-    top: '42%',
-    width: '100%',
-    zIndex: 1000,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bannerGradient: {
-    width: '100%',
-    paddingVertical: 15,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)', // İnce şık çizgiler
-  },
-  announcementText: { 
-    color: '#FFFFFF', 
-    fontSize: 22, 
-    fontWeight: '900', 
-    letterSpacing: 8, // Geniş harf arası her zaman daha asil durur
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowRadius: 10,
-  },
-  votingArea: { 
-    alignItems: 'center', 
-    justifyContent: 'center',
-    width: '100%' 
-  },
-  centeredVotingTimer: {
-    marginBottom: 30, // Kartlarla sayaç arasındaki mesafe
-    width: 100,
-    height: 100,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  staticRingLarge: {
-    position: 'absolute',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    borderWidth: 4,
-    borderColor: 'rgba(255, 105, 235, 0.1)',
-  },
-  timerRingLarge: { 
-    position: 'absolute', 
-    width: 90, 
-    height: 90, 
-    borderRadius: 45, 
-    borderWidth: 6, 
-    borderColor: 'transparent',
-    shadowColor: '#FF69EB',
-    shadowOpacity: 0.6,
-    shadowRadius: 10,
-    zIndex: 10
-  },
- votingAreaPro: { 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    width: '100%',
-    paddingTop: 40, // Şeride yer açmak için masanın içine boşluk verdik
-  },
-  
-  proProgressBarContainer: {
-    position: 'absolute', 
-    top: 20, // 👈 Değeri küçülttük, artık memelerin hemen üstünde belirecek
-    width: '60%', // Masanın %60'ı kadar uzunluk idealdir
-    height: 10, // Biraz daha kalınlaştırdık ki "buradayım" desin
-    backgroundColor: 'rgba(0, 0, 0, 0.1)', // Arka planı hafif belirgin yaptık
-    borderRadius: 10,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  
-  proProgressBar: {
-    height: '100%',
-    borderRadius: 10,
-    // Parlama efekti
-    shadowColor: '#FF69EB',
-    shadowOpacity: 0.9,
-    shadowRadius: 8,
-    elevation: 5,
-  },
 
-  votingRowPro: { 
-    flexDirection: 'row', 
-    gap: 15, 
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 20, // Şeritle kartlar arasına nefes payı
-  },
-
-  proModalOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999,
-  },
-  resultWindow: {
-    width: 400,
-    backgroundColor: '#FFF',
-    borderRadius: 25,
-    overflow: 'hidden',
-  },
+  // --- SONUÇ MODALI (RESULT WINDOW) ---
+  proModalOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 },
+  resultWindow: { width: 400, backgroundColor: '#FFF', borderRadius: 25, overflow: 'hidden' },
   windowHeader: { paddingVertical: 12, alignItems: 'center' },
   windowHeaderText: { color: '#FFF', fontSize: 18, fontWeight: '900', letterSpacing: 4 },
   windowBody: { padding: 20 },
@@ -264,5 +81,5 @@ export const styles = StyleSheet.create({
   modalExitText: { color: '#888', fontWeight: '900' },
   modalPlayBtn: { flex: 1, paddingVertical: 12, borderRadius: 15, backgroundColor: '#FF69EB', alignItems: 'center' },
   modalPlayText: { color: '#FFF', fontWeight: '900' },
- 
+
 });
