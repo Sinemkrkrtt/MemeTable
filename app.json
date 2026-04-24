@@ -13,17 +13,33 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sinem.memetable",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Meme odalarına QR kod ile katılabilmen için kamera iznine ihtiyacımız var Sinem! 📸"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "package": "com.sinem.memetable",
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "recordAudioPermission": false
+        }
+      ]
+    ]
   }
 }
