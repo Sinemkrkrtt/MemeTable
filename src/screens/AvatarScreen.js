@@ -1,109 +1,199 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, FlatList, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Dimensions, StatusBar } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { StackActions } from '@react-navigation/native'; 
 
 const { width } = Dimensions.get('window');
 
-// 1. Resim Listesi (require ile yerel assetler)
 const AVATAR_LIST = [
-  { id: '1', source: require('../../assets/avatar1.JPG'), label: 'Savaşçı' },
-  { id: '2', source: require('../../assets/avatar2.JPG'), label: 'Gezgin' },
-  { id: '3', source: require('../../assets/avatar3.JPG'), label: 'Bilge' },
-  { id: '4', source: require('../../assets/avatar4.JPG'), label: 'Hacker' },
+  'Oliver', 'Willow', 'Felix', 'Jack', 'Luna', 'Zoe', 'Milo', 'Ash', 'Ruby',
+  'Jasper', 'Sasha', 'Leo', 'Nala', 'Simba', 'Buster', 'Molly', 'Coco', 'Shadow'
 ];
 
-export default function AvatarScreen({ navigation }) {
-  const [selectedId, setSelectedId] = useState('1');
+export default function AvatarScreen({ navigation, route }) {
+  const [selected, setSelected] = useState('Oliver');
 
   const handleConfirm = () => {
-    const selectedAvatar = AVATAR_LIST.find(a => a.id === selectedId);
-    // Seçilen avatarı bir önceki ekrana (Lobby) parametre olarak gönderiyoruz
-    navigation.navigate('Lobby', { userAvatar: selectedAvatar.source });
+    const { nextScreen, extraParams } = route.params || {};
+    
+    if (nextScreen) {
+      // 🎯 .replace kullanarak geçmişi temizliyoruz, böylece oyundan çıkınca buraya dönmezsin.
+      navigation.dispatch(
+        StackActions.replace(nextScreen, {
+          ...extraParams,
+          userAvatar: selected, // 🚀 BURAYI DEĞİŞTİRDİK: LobbyScreen 'userAvatar' ismini bekliyor
+          myName: route.params?.myName || 'Sinem'
+        })
+      );
+    } else {
+      navigation.navigate('Home');
+    }
+  };
+
+  const renderItem = ({ item }) => {
+    const isSelected = selected === item;
+    return (
+      <TouchableOpacity 
+        style={[styles.card, isSelected && styles.selectedCard]} 
+        onPress={() => setSelected(item)}
+        activeOpacity={0.7}
+      >
+        <Image 
+          source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${item}&backgroundColor=ffffff` }} 
+          style={[styles.avatarImage, isSelected && { transform: [{ scale: 1.15 }] }]} 
+        />
+        {/* 🎯 İsimleri sildik, sadece aktifse minik bir belirteç bıraktık */}
+        {isSelected && <View style={styles.activeIndicator} />}
+      </TouchableOpacity>
+    );
   };
 
   return (
-    <LinearGradient colors={['#1a1a2e', '#16213e']} style={styles.container}>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" />
       
-      {/* 2. BÜYÜK ÖNİZLEME ALANI */}
-      <View style={styles.previewContainer}>
-        <Text style={styles.title}>Karakterini Belirle</Text>
-        <View style={styles.previewCircle}>
-          <Image 
-            source={AVATAR_LIST.find(a => a.id === selectedId).source} 
-            style={styles.previewImage} 
-          />
-        </View>
-        <Text style={styles.avatarLabel}>
-          {AVATAR_LIST.find(a => a.id === selectedId).label}
-        </Text>
+      {/* HEADER */}
+      <View style={styles.minimalHeader}>
+        <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.navigate('Home')}>
+          <Ionicons name="chevron-back" size={24} color="#333" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Karakter Seçimi</Text>
+        <View style={{ width: 44 }} /> 
       </View>
 
-      {/* 3. SEÇİM LİSTESİ */}
+      {/* SHOWCASE */}
+      <View style={styles.showcase}>
+        <View style={styles.previewRing}>
+           <Image 
+              source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${selected}&backgroundColor=ffffff` }} 
+              style={styles.previewImage} 
+            />
+        </View>
+        <Text style={styles.instructionText}>Masadaki yeni tarzını belirle</Text>
+      </View>
+
+      {/* GRID LIST */}
       <FlatList
         data={AVATAR_LIST}
+        renderItem={renderItem}
+        keyExtractor={(item) => item}
         numColumns={3}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => {
-          const isSelected = item.id === selectedId;
-          return (
-            <TouchableOpacity 
-              activeOpacity={0.8}
-              onPress={() => setSelectedId(item.id)}
-              style={[styles.avatarCard, isSelected && styles.selectedCard]}
-            >
-              <Image source={item.source} style={styles.avatarThumb} />
-              {isSelected && (
-                <View style={styles.checkBadge}>
-                  <Ionicons name="checkmark-circle" size={24} color="#00f2fe" />
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        }}
+        contentContainerStyle={styles.listPadding}
+        showsVerticalScrollIndicator={false}
       />
 
-      {/* 4. ONAY BUTONU */}
-      <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
-        <LinearGradient colors={['#00f2fe', '#4facfe']} style={styles.gradientBtn}>
-          <Text style={styles.btnText}>HAZIRIM!</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-
-    </LinearGradient>
+      {/* FOOTER BUTTON */}
+      <View style={styles.footerContainer}>
+        <TouchableOpacity style={styles.premiumButton} onPress={handleConfirm} activeOpacity={0.8}>
+          <LinearGradient 
+            colors={['#FF00D6', '#FF69EB']} 
+            start={{ x: 0, y: 0 }} 
+            end={{ x: 1, y: 0 }}
+            style={styles.buttonGradient}
+          >
+            <Text style={styles.buttonText}>MASAYA KATIL</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 50 },
-  previewContainer: { alignItems: 'center', marginBottom: 30 },
-  title: { color: '#FFF', fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
-  previewCircle: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    borderWidth: 4,
-    borderColor: '#4facfe',
-    overflow: 'hidden',
-    backgroundColor: '#333'
+  container: { flex: 1, backgroundColor: '#FFF' },
+  minimalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
   },
-  previewImage: { width: '100%', height: '100%' },
-  avatarLabel: { color: '#4facfe', fontSize: 18, marginTop: 10, fontWeight: '600' },
-  listContent: { paddingHorizontal: 20, alignItems: 'center' },
-  avatarCard: {
-    width: width / 3 - 30,
-    height: width / 3 - 30,
-    margin: 10,
-    borderRadius: 20,
+  closeBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: { fontSize: 18, fontFamily: 'Nunito_900Black', color: '#1D1D1F' },
+
+  showcase: { alignItems: 'center', paddingVertical: 25 },
+  previewRing: {
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: '#FFF',
+    elevation: 20,
+    shadowColor: '#FF00D6',
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F0F0F0'
+  },
+  previewImage: { width: 120, height: 120 },
+  instructionText: { marginTop: 15, fontSize: 14, fontFamily: 'Nunito_600SemiBold', color: '#8E8E93' },
+
+  listPadding: { paddingHorizontal: 20, paddingBottom: 140 },
+  card: {
+    flex: 1,
+    aspectRatio: 1, // Kare kartlar
+    margin: 8,
+    borderRadius: 24,
+    backgroundColor: '#F5F5F7',
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 2,
-    borderColor: 'transparent',
-    overflow: 'hidden'
+    borderColor: 'transparent'
   },
-  selectedCard: { borderColor: '#00f2fe', transform: [{ scale: 1.05 }] },
-  avatarThumb: { width: '100%', height: '100%' },
-  checkBadge: { position: 'absolute', top: 5, right: 5, backgroundColor: '#FFF', borderRadius: 12 },
-  confirmButton: { marginHorizontal: 40, marginBottom: 40, height: 55, borderRadius: 30, overflow: 'hidden' },
-  gradientBtn: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  btnText: { color: '#FFF', fontSize: 20, fontWeight: 'bold' }
+  selectedCard: {
+    backgroundColor: '#FFF',
+    borderColor: '#FF00D6',
+    shadowColor: '#FF00D6',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5
+  },
+  avatarImage: { width: '85%', height: '85%' },
+  activeIndicator: { 
+    position: 'absolute', 
+    bottom: 12, 
+    width: 6, 
+    height: 6, 
+    borderRadius: 3, 
+    backgroundColor: '#FF00D6' 
+  },
+
+  footerContainer: {
+    position: 'absolute',
+    bottom: 0,
+    width: '100%',
+    paddingHorizontal: 25,
+    paddingBottom: 40,
+    paddingTop: 20,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  premiumButton: {
+    height: 60,
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#FF00D6',
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+    elevation: 8
+  },
+  buttonGradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 18,
+    fontFamily: 'Nunito_900Black',
+  }
 });

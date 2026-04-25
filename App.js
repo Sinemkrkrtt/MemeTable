@@ -12,8 +12,7 @@ import RoomScreen from './src/screens/RoomScreen';
 import JoinRoom from './src/screens/JoinRoom'; 
 import MemeLibrary from './src/screens/MemeLibrary';
 import ScoreScreen from './src/screens/scoreScreen'; 
-// Eğer ayrı bir profil/avatar sayfası yaptıysan buraya ekle:
-// import AvatarScreen from './src/screens/AvatarScreen'; 
+import AvatarScreen from './src/screens/AvatarScreen'; // ✅ Import edildi
 
 const Stack = createStackNavigator();
 
@@ -36,6 +35,9 @@ export default function App() {
           <>
             {/* Oyun ilk açıldığında Home görünür */}
             <Stack.Screen name="Home" component={HomeScreen} />
+            
+            {/* 🚀 YENİ EKLENEN: Karakter seçim ekranı */}
+            <Stack.Screen name="AvatarScreen" component={AvatarScreen} />
             
             {/* Karakterini belirlediğin yer */}
             <Stack.Screen name="LobbyScreen" component={LobbyScreen} />

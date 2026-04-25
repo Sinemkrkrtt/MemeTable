@@ -7,12 +7,51 @@ import { OFFICIAL_MEMES } from '../memeData';
 import { styles } from './RoomScreenStyles';
 import ScoreScreen from './scoreScreen';
 import JokerModal from './JokerModal';
+import { doc, updateDoc, increment } from 'firebase/firestore';
+import { db, auth } from '../services/firebase';
+
+// KAR TANESİ ANİMASYON BİLEŞENİ ❄️
+const Snowflake = ({ delay, left, size }) => {
+  const fallAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        // Kar tanesi yavaşça belirir
+        Animated.timing(fadeAnim, { toValue: 1, duration: 400, delay: delay, useNativeDriver: true }),
+        // Aşağı doğru düşerken aynı anda yavaşça kaybolur
+        Animated.parallel([
+          Animated.timing(fallAnim, { toValue: 1, duration: 2500, useNativeDriver: true }),
+          Animated.timing(fadeAnim, { toValue: 0, duration: 2500, useNativeDriver: true })
+        ]),
+        // Başa sarar
+        Animated.timing(fallAnim, { toValue: 0, duration: 0, useNativeDriver: true }) 
+      ])
+    ).start();
+  }, []);
+
+  const translateY = fallAnim.interpolate({ 
+    inputRange: [0, 1], 
+    outputRange: [-20, 80] // Yukarıdan başlayıp sayacın altına doğru düşer
+  });
+
+  return (
+    <Animated.Text style={{
+      position: 'absolute', left: left, top: -10, fontSize: size,
+      opacity: fadeAnim, transform: [{ translateY }],
+      textShadowColor: '#00E5FF', textShadowRadius: 8
+    }}>
+      ❄️
+    </Animated.Text>
+  );
+};
 
 export default function RoomScreen({ navigation, route }) {
   const { width, height } = useWindowDimensions();
   
-  // Lobi'den (LobbyScreen) gelen oyuncu verileri
-  const { myName, myAvatarSeed } = route?.params || { myName: 'Sen', myAvatarSeed: 'Sinem' };
+  // 🎯 DÜZELTME 1: route?.params (Soru işareti eklendi ki lobi olmadan açılırsa çökmesin)
+  const { myAvatarSeed } = route?.params || { myAvatarSeed: 'Oliver' };
 
   // --- STATE'LER ---
   const [myHand, setMyHand] = useState([]);
@@ -27,6 +66,51 @@ export default function RoomScreen({ navigation, route }) {
   const [roundEnded, setRoundEnded] = useState(false); 
   const [winnerName, setWinnerName] = useState(""); 
   const [isJokerMenuVisible, setIsJokerMenuVisible] = useState(false);
+
+  
+  // --- JOKER STATE'LERİ ---
+  const [jokerInventory, setJokerInventory] = useState({ joker1: 2, joker2: 5, joker3: 1, joker4: 2 }); 
+  const [isDoublePoints, setIsDoublePoints] = useState(false); 
+  const [isTimeFrozen, setIsTimeFrozen] = useState(false);
+
+  // --- JOKER ÇALIŞTIRMA MANTIĞI ---
+  const handleUseJoker = (jokerId) => {
+    if (jokerInventory[jokerId] <= 0) return; 
+
+    // Envanterden 1 adet düş
+    setJokerInventory(prev => ({ ...prev, [jokerId]: prev[jokerId] - 1 }));
+
+    // Jokerin Gücünü Aktifleştir
+    switch (jokerId) {
+      case 'joker1': 
+      if (myHand.length > 0) {
+          const cardToSwap = selectedCard || myHand[0].id;
+          const randomNewCard = [...OFFICIAL_MEMES].sort(() => 0.5 - Math.random())[0];
+          setMyHand(prev => prev.map(c => 
+            c.id === cardToSwap ? { ...randomNewCard, id: Math.random().toString() } : c
+          ));
+          setSelectedCard(null);
+        }
+        break;
+       case 'joker2': // 🃏 2. JOKER: DESTE TAKASI
+        if (myHand.length > 0) {
+          const currentHandSize = myHand.length; // O an elimizde kaç kart var öğreniyoruz
+          const newHand = [...OFFICIAL_MEMES].sort(() => 0.5 - Math.random()).slice(0, currentHandSize);
+          setMyHand(newHand);
+          setSelectedCard(null); 
+        }
+        break;
+
+      case 'joker3': // BUZ SAATİ
+  setIsTimeFrozen(true); // Süreyi dondur
+  break;
+
+      case 'joker4': // X2 PUAN
+        setIsDoublePoints(true);
+        break;
+    }
+    setIsJokerMenuVisible(false);
+  };
   
   // --- ANİMASYONLAR ---
   const popAnim = useRef(new Animated.Value(0)).current; 
@@ -59,9 +143,9 @@ export default function RoomScreen({ navigation, route }) {
       useNativeDriver: false, 
     }).start();
 
-    if (timeLeft > 0 && !roundEnded) {
-      timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
-    } else if (timeLeft === 0) {
+if (timeLeft > 0 && !roundEnded && !isTimeFrozen) { 
+    timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+  }else if (timeLeft === 0) {
       timeLeftAnim.setValue(1);
       
       if (phase === 'READING') {
@@ -78,7 +162,7 @@ export default function RoomScreen({ navigation, route }) {
       }
     }
     return () => clearTimeout(timer);
-  }, [timeLeft, phase, roundEnded]);
+}, [timeLeft, phase, roundEnded, isTimeFrozen]);
 
   // --- OYUN MANTIĞI ---
   const processPlayingPhase = () => {
@@ -118,25 +202,46 @@ export default function RoomScreen({ navigation, route }) {
       setStagedCard(cardToPlay); 
       setMyHand(myHand.filter(c => c.id !== selectedCard)); 
       setSelectedCard(null);
-      setHasPlayed(true); 
+     setHasPlayed(true); 
+    setIsTimeFrozen(false); // Kart atılınca buzu çöz!
     }
   };
 
-  const handleVote = (cardId) => {
-    if (votedCardId || roundEnded) return; 
+  const handleVote = async (cardId) => { // async eklendi
+    if (votedCardId || roundEnded || phase !== 'VOTING') return; 
     setVotedCardId(cardId);
     
-    setTimeout(() => {
+    setTimeout(async () => { // setTimeout içine async eklendi
       const winnerCard = playedCards[Math.floor(Math.random() * playedCards.length)];
-      setWinnerName(winnerCard.owner);
-      setScores(prev => ({ ...prev, [winnerCard.owner]: prev[winnerCard.owner] + 1 }));
+      const currentWinner = winnerCard.owner; // Kazananı bir değişkene atadık
+      setWinnerName(currentWinner);
+      
+      // X2 PUAN HESAPLAMASI
+      let pointsEarned = 1;
+      if (currentWinner === 'Ben' && isDoublePoints) {
+        pointsEarned = 2; 
+      }
+
+      setScores(prev => ({ ...prev, [currentWinner]: prev[currentWinner] + pointsEarned }));
       setRoundEnded(true);
 
-      Animated.sequence([
-        Animated.spring(announcementAnim, { toValue: 1, speed: 12, bounciness: 8, useNativeDriver: true }),
-        Animated.delay(2000), 
-        Animated.timing(announcementAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
-      ]).start();
+      // 🔥 YENİ: EĞER BEN KAZANDIYSAM FIREBASE'DE KALBİ ARTIR 🔥
+      if (currentWinner === 'Ben') {
+        const user = auth.currentUser;
+        if (user) {
+          try {
+            const userRef = doc(db, 'users', user.uid);
+            await updateDoc(userRef, {
+              wonHearts: increment(1) 
+            });
+            console.log("🔥 Bir el kazandın! Kalp sayısı 1 arttı.");
+          } catch (error) {
+            console.error("Kalp güncellenemedi:", error);
+          }
+        }
+      }
+
+      Animated.spring(announcementAnim, { toValue: 1, useNativeDriver: true }).start();
 
       if (myHand.length > 0) {
         setTimeout(() => startNextRound(), 3500);
@@ -144,7 +249,7 @@ export default function RoomScreen({ navigation, route }) {
     }, 1500);
   };
 
-  const startNextRound = () => {
+const startNextRound = () => {
     if (myHand.length === 0) {
       const shuffle = [...OFFICIAL_MEMES].sort(() => 0.5 - Math.random());
       setMyHand(shuffle.slice(0, 5));
@@ -155,26 +260,32 @@ export default function RoomScreen({ navigation, route }) {
     setVotedCardId(null);
     setRoundEnded(false);
     setWinnerName("");
+    setIsDoublePoints(false); 
     setPhase('READING');
     setTimeLeft(5);
+
+    // 👇 EKLENMESİ GEREKEN KISIM: Banner'ı ve diğer animasyonları başa sarıyoruz
+    announcementAnim.setValue(0); 
     popAnim.setValue(0);
     flipAnim.setValue(0);
+    
     Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
   };
 
-const PlayerSlot = ({ name, positionStyle, avatarAnimal, badgeColor }) => (
-  <View style={[styles.playerSlot, positionStyle]}>
-    <View style={styles.avatarContainer}>
-      <Image 
-        source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${avatarAnimal}&backgroundColor=ffffff` }} 
-        style={[styles.avatar, { borderColor: badgeColor, backgroundColor: '#FFF' }]} 
-      />
-      <View style={[styles.nameBadge, { backgroundColor: badgeColor }]}>
-        <Text style={styles.playerName}>{name}</Text>
+  const PlayerSlot = ({ name, positionStyle, avatarAnimal, badgeColor }) => (
+    <View style={[styles.playerSlot, positionStyle]}>
+      <View style={styles.avatarContainer}>
+        <Image 
+          source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${avatarAnimal}&backgroundColor=ffffff` }} 
+          style={[styles.avatar, { borderColor: badgeColor, backgroundColor: '#FFF' }]} 
+        />
+        <View style={[styles.nameBadge, { backgroundColor: badgeColor }]}>
+          <Text style={styles.playerName}>{name}</Text>
+        </View>
       </View>
     </View>
-  </View>
-);
+  );
+
   const cardScale = flipAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }); 
   const cardRotate = flipAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }); 
 
@@ -182,161 +293,88 @@ const PlayerSlot = ({ name, positionStyle, avatarAnimal, badgeColor }) => (
   const logoSwapCard = require('../../assets/joker2.png');
   const logoTimeFreeze = require('../../assets/joker3.png');
   const logoDoublePoints = require('../../assets/joker4.png');
-  
+
   return (
     <View style={styles.container}>
       <StatusBar hidden />
       <View style={styles.whiteBackground} />
+
+      {/* 🔮 SOL KENAR SABİT JOKER HUD (Glassmorphism & Neon) */}
+      <View style={styles.hudWrapper}>
+        <View style={styles.hudContainer}>
+          <Ionicons name="flash" size={20} color="#FF00D6" style={styles.hudTitleIcon} />
+
+          {[
+            { id: 'joker1', logo: logoSwapHand, color: '#FF69EB' },
+            { id: 'joker2', logo: logoSwapCard, color: '#FF8A00' },
+            { id: 'joker3', logo: logoTimeFreeze, color: '#00E5FF' },
+            { id: 'joker4', logo: logoDoublePoints, color: '#FFDC5E' }
+          ].map((joker) => {
+            const currentCount = jokerInventory[joker.id];
+            const isDepleted = currentCount <= 0;
+
+            return (
+              <View key={joker.id} style={styles.jokerIconWrapper}>
+                <TouchableOpacity 
+                  activeOpacity={0.7}
+                  disabled={isDepleted}
+                  onPress={() => handleUseJoker(joker.id)} 
+                  style={[
+                    styles.jokerButton,
+                    { shadowColor: joker.color, opacity: isDepleted ? 0.5 : 1 }
+                  ]}
+                >
+                  <Image source={joker.logo} style={styles.jokerLogo} resizeMode="contain" />
+                  
+                  {!isDepleted && (
+                    <View style={[styles.jokerBadge, { backgroundColor: joker.color }]}>
+                      <Text style={styles.jokerBadgeText}>{currentCount}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </View>
+      </View>
       
-      {/* DUYURU BANNER'I */}
+      {/* 📢 DUYURU BANNER'I */}
       <Animated.View 
+        pointerEvents="none" // 👇 EKLENDİ: Ekranda olsa bile arkasındaki kartlara tıklanabilir!
         style={[
           styles.announcementBanner, 
-          { 
-            transform: [{ 
-              translateX: announcementAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [-width, 0] 
-              }) 
-            }] 
-          }
+          { transform: [{ translateX: announcementAnim.interpolate({ inputRange: [0, 1], outputRange: [-width, 0] }) }] }
         ]}
       >
         <LinearGradient
-          colors={['transparent', roundEnded ? 'rgba(255, 180, 130, 0.91)' : 'rgba(255, 105, 235, 0.9)', 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
+          colors={['transparent', roundEnded ? 'rgba(255, 180, 130, 0.95)' : 'rgba(255, 105, 235, 0.95)', 'transparent']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
           style={styles.bannerGradient}
         >
-          <Text style={[styles.announcementText, roundEnded && { color: '#FFFFFF', textShadowColor: 'transparent' }]}>
+          <Text style={[styles.announcementText, roundEnded && styles.announcementTextWinner]}>
             {roundEnded 
               ? (winnerName === 'Ben' ? "KAZANAN SENSİN! 🏆" : `${winnerName.toUpperCase()} KAZANDI!`) 
               : "EN İYİ MEME'İ SEÇ!"}
           </Text>
         </LinearGradient>
       </Animated.View>
-
+      {/* 🟢 OYUN MASASI */}
       <View style={styles.tableContainer}>
-        
-        {/* 🧰 ULTRA-PREMIUM HUD JOKER PANELİ */}
-        <View style={{ 
-          position: 'absolute', 
-          left: 20, 
-          top: '20%', 
-          backgroundColor: 'transparent',
-          borderTopRightRadius: 35,
-          borderBottomRightRadius: 35,
-          paddingVertical: 15,
-          paddingHorizontal: 12,
-          paddingLeft: 10, 
-          borderWidth: 1.5,
-          borderLeftWidth: 0, 
-          borderColor: 'rgba(255, 255, 255, 0.15)',
-          alignItems: 'center',
-          gap: 5, 
-          zIndex: 999,
-        }}>
-          {[
-            { id: 'joker1', logo: logoSwapHand, color: '#F7A33B', count: 2, label: 'SWAP' },
-            { id: 'joker2', logo: logoSwapCard, color: '#F7A33B', count: 5, label: 'ONE' },
-            { id: 'joker3', logo: logoTimeFreeze, color: '#F7A33B', count: 1, label: 'TIME' },
-            { id: 'joker4', logo: logoDoublePoints, color: '#F7A33B', count: 2, label: 'X2' }
-          ].map((joker) => (
-            <View key={joker.id} style={{ alignItems: 'center', marginBottom: -3 }}>
-              <TouchableOpacity 
-                activeOpacity={0.7}
-                onPress={() => setIsJokerMenuVisible(true)}
-                style={{
-                  width: 50, 
-                  height: 50,
-                  overflow: 'visible', 
-                  shadowColor: joker.color,
-                  shadowOpacity: 0.3,
-                  shadowRadius: 5,
-                  elevation: 6,
-                }}
-              >
-                <Image 
-                  source={joker.logo}
-                  style={{
-                    width: '100%', 
-                    height: '100%', 
-                    borderRadius: 16, 
-                    borderWidth: 1.5,
-                    borderColor: `${joker.color}70`, 
-                    backgroundColor: '#FFF', 
-                  }}
-                  resizeMode="cover" 
-                />
-                
-                <View style={{
-                  position: 'absolute',
-                  top: -8,
-                  right: -8,
-                  backgroundColor: joker.color,
-                  minWidth: 22,
-                  height: 22,
-                  borderRadius: 11,
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  zIndex: 10,
-                }}>
-                  <Text style={{ 
-                    color: '#FFF', 
-                    fontSize: 11, 
-                    fontFamily: 'Nunito_900Black',
-                    includeFontPadding: false 
-                  }}>{joker.count}</Text>
-                </View>
-              </TouchableOpacity>
-                
-              <Text style={{ 
-                color: joker.color, 
-                fontSize: 9, 
-                fontFamily: 'Nunito_900Black', 
-                letterSpacing: 2, 
-                marginTop: 6,
-                textShadowColor: joker.color,
-                textShadowRadius: 4,
-              }}>
-                {joker.label}
-              </Text>
-            </View>
-          ))}
-        </View>
-    
         <View style={styles.mainTableRim}>
           <View style={styles.tableSurface}>
             <Image source={require('../../assets/roomTableLogo.png')} style={styles.roomTableLogo} />
           </View>
 
-      {/* OYUNCULAR BÖLÜMÜ */}
-<PlayerSlot 
-  name={`Ali: ${scores.Ali}`} 
-  positionStyle={styles.topPlayer} 
-  avatarAnimal="Oliver" // Biraz gözlüklü, strateji yapan tip
-  badgeColor="#FDE58E" 
-/>
-<PlayerSlot 
-  name={`Ece: ${scores.Ece}`} 
-  positionStyle={styles.leftPlayer} 
-  avatarAnimal="Willow" // Cool ve her meme'e bir cevabı olan tip
-  badgeColor="#FBB0B2" 
-/>
-<PlayerSlot 
-  name={`Can: ${scores.Can}`} 
-  positionStyle={styles.rightPlayer} 
-  avatarAnimal="Felix" // Komik ve masanın neşesi
-  badgeColor="#FEC994" 
-/>
-<PlayerSlot 
-  name={`${myName}: ${scores.Ben}`} 
-  positionStyle={styles.bottomPlayer} 
-  avatarAnimal="Sinem" // Senin ismini seed olarak verdim, sana özel bir karakter çıksın!
-  badgeColor="#FCA9D7" 
-/>
-          {/* MERKEZ (DURUM, SAAT, OYLAMA) */}
+          {/* OYUNCULAR */}
+          <PlayerSlot name={`Ali: ${scores.Ali}`} positionStyle={styles.topPlayer} avatarAnimal="Oliver" badgeColor="#FDE58E" />
+          <PlayerSlot name={`Ece: ${scores.Ece}`} positionStyle={styles.leftPlayer} avatarAnimal="Willow" badgeColor="#FBB0B2" />
+          <PlayerSlot name={`Can: ${scores.Can}`} positionStyle={styles.rightPlayer} avatarAnimal="Felix" badgeColor="#FEC994" />
+         <PlayerSlot name={`Sen: ${scores.Ben}`} positionStyle={styles.bottomPlayer} avatarAnimal={myAvatarSeed} badgeColor="#FCA9D7" />
+
+          {/* MERKEZ ALAN (Kart, Sayaç, Oylama) */}
           <View style={styles.centerArea}>
+            
+            {/* DURUM KARTI (READING) */}
             {phase === 'READING' && (
               <Animated.View style={[styles.situationCardWrapper, { transform: [{ scale: popAnim }, { scale: cardScale }, { rotateY: cardRotate }] }]}>
                 <View style={styles.premiumSituationCard}>
@@ -357,41 +395,48 @@ const PlayerSlot = ({ name, positionStyle, avatarAnimal, badgeColor }) => (
               </Animated.View>
             )}
 
+            {/* SAYAÇ (PLAYING) */}
             {phase === 'PLAYING' && (
               <View style={styles.proTimerContainer}>
-                <View style={styles.staticRing} />
+                <View style={[styles.staticRing, isTimeFrozen && styles.staticRingFrozen]} />
+
                 <Animated.View style={[
                   styles.timerRing, 
-                  { 
-                    borderTopColor: timeLeft <= 3 ? '#FF3B30' : '#FF69EB', 
-                    borderLeftColor: timeLeft <= 3 ? '#FF3B30' : '#FF69EB',
-                    transform: [{ 
-                      rotate: rotateAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['0deg', '360deg']
-                      }) 
-                    }] 
-                  }
+                  isTimeFrozen ? styles.timerRingFrozen : (timeLeft <= 3 ? styles.timerRingDanger : styles.timerRingNormal),
+                  { transform: [{ rotate: rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }
                 ]} />
-                <View style={styles.modernTimerContent}>
-                   <Text style={[styles.proTimerText, timeLeft <= 3 && {color: '#FF3B30'}]}>
+
+                {isTimeFrozen && (
+                  <View style={styles.snowOverlay} pointerEvents="none">
+                     <Snowflake delay={0} left="25%" size={14} />
+                     <Snowflake delay={600} left="55%" size={10} />
+                     <Snowflake delay={1200} left="35%" size={16} />
+                     <Snowflake delay={1800} left="65%" size={12} />
+                  </View>
+                )}
+
+                <View style={[styles.modernTimerContent, isTimeFrozen && styles.modernTimerContentFrozen]}>
+                   <Text style={[
+                     styles.proTimerText, 
+                     timeLeft <= 3 && !isTimeFrozen && styles.proTimerTextDanger,
+                     isTimeFrozen && styles.proTimerTextFrozen
+                   ]}>
                      {timeLeft}
                    </Text>
                 </View>
               </View>
-            )}     
-            
+            )}
+
+            {/* OYLAMA (VOTING) */}
             {phase === 'VOTING' && playedCards.length > 0 && (
               <View style={styles.votingAreaPro}>
+                
                 {!roundEnded && (
-                  <View style={[styles.proProgressBarContainer, { zIndex: 999 }]}>
+                  <View style={styles.proProgressBarContainer}>
                     <Animated.View style={[
                       styles.proProgressBar, 
                       { 
-                        width: timeLeftAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ['0%', '100%']
-                        }),
+                        width: timeLeftAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
                         backgroundColor: timeLeftAnim.interpolate({
                           inputRange: [0, 0.2, 0.5, 1],
                           outputRange: ['#FF3B30', '#FF9500', '#FFDC5E', '#FF69EB'] 
@@ -450,10 +495,10 @@ const PlayerSlot = ({ name, positionStyle, avatarAnimal, badgeColor }) => (
                         </View>
 
                         <View style={styles.windowActions}>
-                          <TouchableOpacity style={styles.modalExitBtn} onPress={() => navigation.navigate('Home')}>
+                          <TouchableOpacity style={styles.modalExitBtn} onPress={() => navigation.navigate('Home')} activeOpacity={0.8}>
                             <Text style={styles.modalExitText}>OYUNDAN ÇIK</Text>
                           </TouchableOpacity>
-                          <TouchableOpacity style={styles.modalPlayBtn} onPress={startNextRound}>
+                          <TouchableOpacity style={styles.modalPlayBtn} onPress={startNextRound} activeOpacity={0.8}>
                             <Text style={styles.modalPlayText}>YENİ OYUN</Text>
                           </TouchableOpacity>
                         </View>
@@ -467,47 +512,49 @@ const PlayerSlot = ({ name, positionStyle, avatarAnimal, badgeColor }) => (
         </View>
       </View>
 
-      {/* DESTE (KARTLAR) */}
-      {!hasPlayed && phase !== 'VOTING' && (
-        <View style={styles.deckContainer}>
-          {myHand.map((item, index) => {
-            const rotation = (index - Math.floor(myHand.length / 2)) * 10; 
-            const isSelected = selectedCard === item.id;
-            return (
-              <TouchableOpacity key={item.id} activeOpacity={1} onPress={() => setSelectedCard(item.id === selectedCard ? null : item.id)} style={[styles.deckCard, { transform: [{ rotate: `${rotation}deg` }, { translateY: isSelected ? -40 : 0 }, { scale: isSelected ? 1.2 : 1 }], zIndex: isSelected ? 100 : index, left: (width / 2) - 55 + (index - Math.floor(myHand.length / 2)) * 50 }]}>
-                <Image source={{ uri: item.url }} style={styles.memeImage} />
-                {isSelected && <View style={styles.selectedBorder} />}
-                {isSelected && (
-                  <TouchableOpacity style={styles.playButton} onPress={handlePlayCard} activeOpacity={0.7}>
-                    <LinearGradient colors={['#FF69EB', '#FF00D6']} style={styles.playButtonGradient}>
-                      <Text style={styles.playButtonText}>AT</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+      {/* 🚀 ALT AKSİYON MERKEZİ (Kart Destesi) */}
+      <View style={styles.bottomDeckWrapper}>
+        {!hasPlayed && phase !== 'VOTING' && (
+          <View style={[styles.handContainer, { width: width }]}>
+            {myHand.map((item, index) => {
+              const rotation = (index - Math.floor(myHand.length / 2)) * 10; 
+              const isSelected = selectedCard === item.id;
+              
+              return (
+                <TouchableOpacity 
+                  key={item.id} 
+                  activeOpacity={1} 
+                  onPress={() => setSelectedCard(isSelected ? null : item.id)} 
+                  style={[
+                    styles.deckCard, 
+                    { 
+                      transform: [{ rotate: `${rotation}deg` }, { translateY: isSelected ? -30 : 0 }, { scale: isSelected ? 1.1 : 1 }], 
+                      zIndex: isSelected ? 100 : index, 
+                      left: (width / 2) - 55 + (index - Math.floor(myHand.length / 2)) * 50 
+                    }
+                  ]}
+                >
+                  <Image source={{ uri: item.url }} style={styles.memeImage} />
+                  {isSelected && <View style={styles.selectedBorder} />}
+                  
+                  {isSelected && (
+                    <TouchableOpacity style={styles.playButton} onPress={handlePlayCard} activeOpacity={0.8}>
+                      <LinearGradient colors={['#FF69EB', '#FF00D6']} style={styles.playButtonGradient}>
+                        <Text style={styles.playButtonText}>AT</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+      </View>
 
-      {/* 🏆 FINAL EKRANI */}
+      {/* 🏆 FINAL EKRANI (SCORE SCREEN) */}
       {roundEnded && myHand.length === 0 && (
-        <ScoreScreen 
-          scores={scores} 
-          navigation={navigation} 
-          onNewGame={startNextRound} 
-        />
+        <ScoreScreen scores={scores} navigation={navigation} onNewGame={startNextRound} />
       )}
-
-      {/* 🎁 JOKER ÇANTASI MODALI */}
-      <JokerModal 
-        visible={isJokerMenuVisible} 
-        onClose={() => setIsJokerMenuVisible(false)}
-        onUseJoker={(jokerId) => {
-          console.log("Joker Onaylandı:", jokerId);
-          setIsJokerMenuVisible(false);
-        }}
-      />
     </View>
   );
 }

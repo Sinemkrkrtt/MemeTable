@@ -6,46 +6,108 @@ import { Ionicons } from '@expo/vector-icons';
 const { width, height } = Dimensions.get('window');
 
 const ScoreScreen = ({ scores, navigation, onNewGame }) => {
+  // Puanları büyükten küçüğe sırala
   const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
 
   return (
-    // 🔥 Overlay tüm ekranı kaplar ve arkayı karartır
     <View style={styles.overlay}>
-      <LinearGradient colors={['rgba(10, 5, 20, 0.85)', 'rgba(25, 15, 35, 0.95)']} style={StyleSheet.absoluteFill} />
+      {/* 🌅 Arka Plan: Transparan Candy Sunset Gradient (Masa artık görünüyor) */}
+      <LinearGradient 
+        colors={['rgba(255, 105, 235, 0.7)', 'rgba(255, 191, 129, 0.7)', 'rgba(255, 220, 94, 0.7)']} 
+        style={StyleSheet.absoluteFill} 
+      />
       
-      {/* 🎯 PENCERE BURASI (Modal Window) */}
+      {/* Dekoratif Işık Yansımaları */}
+      <View style={styles.topGlow} />
+      
       <View style={styles.modalWindow}>
-        <View style={styles.header}>
-           <Text style={styles.headerSubtitle}>MAÇ SONA ERDİ</Text>
-           <Text style={styles.headerTitle}>TUR SIRALAMASI</Text>
+        {/* ❌ SAĞ ÜST KAPATMA BUTONU */}
+        <TouchableOpacity 
+          style={styles.closeButton} 
+          onPress={() => navigation.navigate('Home')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="close" size={30} color="#FF69EB" />
+        </TouchableOpacity>
+
+        {/* Cam Parlaması */}
+        <View style={styles.glassReflect} />
+
+        {/* 🔥 ÜST DÜZEY BAŞLIK TASARIMI */}
+        <View style={styles.headerContainer}>
+          <View style={styles.statusBadge}>
+            <Ionicons name="flash" size={12} color="#FFDC5E" />
+            <Text style={styles.statusText}>MAÇ TAMAMLANDI</Text>
+          </View>
+          
+          <View style={styles.titleArea}>
+            {/* Soft Işıma (Glow) Arka Planı */}
+            <Text style={styles.headerTitleGlow}>FİNAL SKORU</Text>
+            <Text style={styles.headerTitle}>FİNAL SKORU</Text>
+          </View>
         </View>
 
+        {/* 🏟️ KÜRSÜ (PODIUM) - Yeni Nesil Tasarım */}
         <View style={styles.podiumContainer}>
           {sorted.map(([name, score], index) => {
             const isFirst = index === 0;
+            const isMe = name === 'Ben';
+            
+            // Renk Paleti Eşleşmesi: Sarı -> Pembe -> Somon -> Şeftali
+            const rankColors = ['#FFDC5E', '#FF69EB', '#FFA3A5', '#FFBF81'];
+            const heightMap = ['100%', '86%', '76%', '68%'];
+
             return (
-              <View key={name} style={[styles.podiumCard, isFirst && styles.firstCard]}>
+              <View 
+                key={name} 
+                style={[
+                  styles.podiumCard, 
+                  { height: heightMap[index], borderColor: rankColors[index] + '40' },
+                  isFirst && styles.firstCard,
+                  (!isFirst && isMe) && styles.myCard
+                ]}
+              >
                 {isFirst && <Text style={styles.crown}>👑</Text>}
-                <View style={[styles.rankBadge, { backgroundColor: index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : '#CD7F32' }]}>
+                
+                <View style={[styles.rankBadge, { backgroundColor: rankColors[index] }]}>
                   <Text style={styles.rankText}>{index + 1}</Text>
                 </View>
-                <Text style={[styles.playerName, isFirst && styles.winnerText]} numberOfLines={1}>
-                   {name === 'Ben' ? 'SENSİN' : name.toUpperCase()}
-                </Text>
-                <Text style={styles.scoreText}>{score} PUAN</Text>
+                
+                <View style={styles.playerInfo}>
+                  <Text style={[styles.playerName, isFirst && styles.winnerText, isMe && styles.meTextBold]} numberOfLines={1}>
+                     {isMe ? 'SEN' : name.toUpperCase()}
+                  </Text>
+                  
+                  <View style={[styles.scorePill, { backgroundColor: rankColors[index] + '15' }]}>
+                    <Text style={[styles.scoreText, { color: rankColors[index] === '#FFDC5E' ? '#CC9900' : rankColors[index] }]}>
+                      {score} PK
+                    </Text>
+                  </View>
+                </View>
+
+                <LinearGradient 
+                  colors={['rgba(255,255,255,0.8)', 'rgba(255,255,255,0.3)']} 
+                  style={StyleSheet.absoluteFill} 
+                  borderRadius={24}
+                />
               </View>
             );
           })}
         </View>
 
+        {/* 🎮 MERKEZLENMİŞ AKSİYON BUTONU */}
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.exitBtn} onPress={() => navigation.navigate('Home')}>
-            <Text style={styles.exitText}>AYRIL</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.playBtn} onPress={onNewGame}>
-            <LinearGradient colors={['#FF69EB', '#FF00D6']} style={styles.playGradient}>
-              <Text style={styles.playText}>YENİ OYUN</Text>
+          <TouchableOpacity style={styles.playBtnContainer} onPress={onNewGame} activeOpacity={0.9}>
+            <View style={styles.btnAura} />
+            <LinearGradient 
+              colors={['#FF69EB', '#FFA3A5']} 
+              start={{x: 0, y: 0.5}} end={{x: 1, y: 0.5}}
+              style={styles.playBtnGradient}
+            >
+              <View style={styles.innerReflect} />
+              <Text style={styles.playBtnText}>YENİDEN OYNA</Text>
+              <View style={styles.btnIconCircle}>
+              </View>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -57,41 +119,110 @@ const ScoreScreen = ({ scores, navigation, onNewGame }) => {
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.1)', 
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 999999,
   },
+  topGlow: {
+    position: 'absolute', top: -100, width: width, height: 300,
+    backgroundColor: '#FFF', opacity: 0.2, borderRadius: 150, transform: [{ scaleX: 2 }],
+  },
   modalWindow: {
-    width: '60%', // Genişliği yatay ekranın %85'i yaptık
-    height: '85%', // Yüksekliği %80 yaptık (Pencere formu oluştu)
-    backgroundColor: '#FFFFFF',
+    width: '70%',
+    height: '88%',
+    backgroundColor: 'rgba(255, 255, 255, 0.90)',
     borderRadius: 40,
-    padding: 20,
+    padding: 25,
     justifyContent: 'space-between',
     alignItems: 'center',
-    elevation: 20,
-    shadowColor: '#FF69EB',
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    elevation: 30,
+    shadowColor: '#FF69EB', shadowOpacity: 0.3, shadowRadius: 20,
   },
-  header: { alignItems: 'center' },
-  headerSubtitle: { color: '#AAA', fontWeight: '900', fontSize: 10, letterSpacing: 2 },
-  headerTitle: { color: '#FF69EB', fontWeight: '900', fontSize: 22, letterSpacing: 3 },
-  podiumContainer: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', width: '100%', height: '50%', gap: 10 },
-  podiumCard: { flex: 1, backgroundColor: '#F8F9FA', borderRadius: 20, padding: 10, alignItems: 'center', height: '80%' },
-  firstCard: { height: '100%', borderColor: '#FFD700', borderWidth: 2, backgroundColor: '#FFFBEB', transform: [{ scale: 1.05 }] },
-  rankBadge: { width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 5 },
-  rankText: { fontSize: 12, fontWeight: '900' },
-  playerName: { fontSize: 16, fontWeight: '800', color: '#555' },
-  winnerText: { color: '#D4AF37', fontWeight: '900' },
-  scoreText: { fontSize: 13, fontWeight: '900', color: '#333' },
-  crown: { position: 'absolute', top: -25, fontSize: 30 },
-  actionRow: { flexDirection: 'row', gap: 20, width: '100%', justifyContent: 'center', marginBottom: 10 },
-  exitBtn: { paddingVertical: 12, paddingHorizontal: 30, borderRadius: 15, backgroundColor: '#EEE' },
-  exitText: { color: '#888', fontWeight: '900' },
-  playBtn: { width: 200, borderRadius: 15, overflow: 'hidden' },
-  playGradient: { paddingVertical: 12, alignItems: 'center' },
-  playText: { color: '#FFF', fontWeight: '900' }
+  closeButton: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    zIndex: 100,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  glassReflect: {
+    position: 'absolute', top: -50, left: -50, width: 200, height: 200,
+    backgroundColor: 'rgba(255, 225, 159, 0.4)', borderRadius: 100, transform: [{ rotate: '45deg' }],
+  },
+  headerContainer: { alignItems: 'center', marginTop: 5 },
+  statusBadge: { 
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF9D4193', 
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10, marginBottom: 12 
+  },
+  statusText: { color: '#FFF', fontSize: 10, fontWeight: '900', letterSpacing: 2, marginLeft: 5 },
+  titleArea: { justifyContent: 'center', alignItems: 'center' },
+  headerTitleGlow: {
+    position: 'absolute', color: '#FF69EB', fontSize: 36, fontWeight: '900',
+    letterSpacing: 2, opacity: 0.3,
+  },
+  headerTitle: { 
+    color: '#FF86C8', fontSize: 36, fontWeight: '900', 
+    letterSpacing: 2, fontFamily: 'Nunito_900Black' 
+  },
+  podiumContainer: { 
+    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', 
+    width: '100%', height: '50%', gap: 15 
+  },
+  podiumCard: { 
+    flex: 1, borderRadius: 24, padding: 8, alignItems: 'center',
+    justifyContent: 'flex-end', borderWidth: 2, zIndex: 1
+  },
+  firstCard: { 
+    backgroundColor: '#FFFBE6', transform: [{ scale: 1.05 }],
+    shadowColor: '#FFDC5E', shadowOpacity: 0.5, shadowRadius: 15, elevation: 10
+  },
+  myCard: { backgroundColor: '#FFF0F9', borderStyle: 'dashed' },
+  playerInfo: { alignItems: 'center', width: '100%', marginBottom: 15, zIndex: 10 },
+  playerName: { fontSize: 14, fontWeight: '900', color: '#555', marginBottom: 8 },
+  meTextBold: { color: '#FF69EB' },
+  winnerText: { color: '#CC9900', fontSize: 16 },
+  scorePill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14 },
+  scoreText: { fontSize: 13, fontWeight: '900' },
+  rankBadge: { 
+    width: 32, height: 32, borderRadius: 16, justifyContent: 'center', 
+    alignItems: 'center', marginBottom: 10, elevation: 5, zIndex: 10 
+  },
+  rankText: { fontSize: 14, fontWeight: '900', color: '#FFF' },
+  crown: { position: 'absolute', top: -35, fontSize: 36, zIndex: 20 },
+
+  actionRow: { 
+    width: '100%', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  playBtnContainer: { width: 220, height: 62, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
+  btnAura: {
+    position: 'absolute', width: '90%', height: '60%', backgroundColor: '#FF69EB',
+    borderRadius: 20, opacity: 0.4, 
+  },
+  playBtnGradient: {
+    width: '100%', height: '80%', borderRadius: 20,
+    flexDirection: 'row', alignItems: 'center', 
+    paddingHorizontal: 18, elevation: 10, justifyContent: 'center', 
+  },
+  innerReflect: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: '40%', backgroundColor: 'rgba(255, 255, 255, 0.2)'
+  },
+  playBtnText: { color: '#FFF', fontSize: 14, fontWeight: '900', letterSpacing: 1 , textAlign: 'center' },
+  btnIconCircle: { 
+    width: 32, height: 32, borderRadius: 10, backgroundColor: 'transparent', 
+    justifyContent: 'center', alignItems: 'center', position: 'absolute', 
+    right: 15, 
+  },
 });
 
 export default ScoreScreen;
