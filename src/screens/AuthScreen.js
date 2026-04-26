@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, Image, KeyboardAvoidingView, Platform, Alert, StatusBar, Dimensions } from 'react-native';
+import { 
+  View, Text, TextInput, TouchableOpacity, StyleSheet, 
+  SafeAreaView, Image, KeyboardAvoidingView, Platform, 
+  Alert, StatusBar, Dimensions, ActivityIndicator 
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../services/firebase';
@@ -23,32 +27,56 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-
   
+  // 🚀 EKLENDİ: Yüklenme durumu state'i
+  const [loading, setLoading] = useState(false);
 
   const handleAuth = async () => {
-    if (!email || !password || (!isLogin && !nickname)) {
+    // 🚀 EKLENDİ: E-postanın sonundaki kazara eklenen boşlukları temizler
+    const cleanEmail = email.trim();
+
+    if (!cleanEmail || !password || (!isLogin && !nickname)) {
       Alert.alert("Eksik Bilgi", "Lütfen tüm alanları doldur tatlım.");
       return;
     }
 
+    // 🚀 EKLENDİ: Firebase 6 karakterden kısa şifre kabul etmez, baştan uyaralım
+    if (password.length < 6) {
+      Alert.alert("Kısa Şifre", "Şifren en az 6 karakter olmalı.");
+      return;
+    }
+
+    setLoading(true); // İşlem başladı, butonu kilitle ve döndür
+
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmailAndPassword(auth, cleanEmail, password);
       } else {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
         const user = userCredential.user;
+        
+        // İsmi (Meme Kralı vb.) Firebase Auth'a kaydet
         await updateProfile(user, { displayName: nickname });
+        
+        // Ekstra verileri Firestore Veritabanına yaz
         await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           nickname: nickname,
-          email: email,
+          email: cleanEmail,
           createdAt: new Date(),
           score: 0
         });
       }
     } catch (error) {
-      Alert.alert("Hata", "İşlem başarısız: " + error.message);
+      // Sık karşılaşılan Firebase hatalarını Türkçeleştirme (Opsiyonel ama hoş olur)
+      let errorMsg = error.message;
+      if (error.code === 'auth/invalid-email') errorMsg = "Geçersiz bir e-posta adresi girdin.";
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') errorMsg = "E-posta veya şifre hatalı.";
+      if (error.code === 'auth/email-already-in-use') errorMsg = "Bu e-posta adresi zaten kullanımda.";
+
+      Alert.alert("Hata", errorMsg);
+    } finally {
+      setLoading(false); // İşlem bitti (başarılı veya hatalı), butonu normale döndür
     }
   };
 
@@ -56,7 +84,7 @@ export default function AuthScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
       
-      {/* 1. KATMAN: Arka Plan Dekorları (Kodda en üstte olmalı) */}
+      {/* 1. KATMAN: Arka Plan Dekorları */}
       <View style={styles.circleBlur1} />
       <View style={styles.circleBlur2} />
 
@@ -75,7 +103,6 @@ export default function AuthScreen() {
                 resizeMode="contain"
               />
             </View>
-
 
             <View style={styles.formContainer}>
               {/* --- NICKNAME (Sadece Kayıt) --- */}
@@ -101,6 +128,7 @@ export default function AuthScreen() {
                   value={email}
                   onChangeText={setEmail}
                   autoCapitalize="none"
+                  keyboardType="email-address" // 🚀 EKLENDİ: Klavyeyi e-posta modunda açar (@ işareti kolay gelir)
                 />
               </View>
 
@@ -120,13 +148,23 @@ export default function AuthScreen() {
               </View>
             </View>
 
-            <TouchableOpacity style={styles.buttonShadow} onPress={handleAuth} activeOpacity={0.9}>
+            <TouchableOpacity 
+              style={styles.buttonShadow} 
+              onPress={handleAuth} 
+              activeOpacity={0.9}
+              disabled={loading} // 🚀 EKLENDİ: Yüklenirken butona tekrar basılmasını engeller
+            >
               <LinearGradient colors={[theme.pink, theme.orange]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.mainButton}>
-                <Text style={styles.buttonText}>{isLogin ? 'Giriş Yap' : 'Kayıt Ol'}</Text>
+                {/* 🚀 EKLENDİ: Loading durumuna göre animasyon veya yazı gösterimi */}
+                {loading ? (
+                  <ActivityIndicator color="white" size="small" />
+                ) : (
+                  <Text style={styles.buttonText}>{isLogin ? 'Giriş Yap' : 'Kayıt Ol'}</Text>
+                )}
               </LinearGradient>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={styles.footerLink}>
+            <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={styles.footerLink} disabled={loading}>
               <Text style={styles.footerText}>
                 {isLogin ? 'Henüz bir hesabın yok mu? ' : 'Zaten hesabın var mı? '}
                 <Text style={styles.footerLinkBold}>{isLogin ? 'Kayıt Ol' : 'Giriş Yap'}</Text>
@@ -145,13 +183,13 @@ const styles = StyleSheet.create({
   
   circleBlur1: { 
     position: 'absolute', 
-    top: -90,    // Biraz daha içeri aldık ki görünür olsun
+    top: -90, 
     right: -60, 
     width: 250, 
     height: 230, 
     borderRadius: 140, 
     backgroundColor: theme.pink, 
-    opacity: 0.2, // Opacity'yi %10'dan %20'ye çıkardım
+    opacity: 0.2, 
   },
 
   circleBlur2: { 
@@ -162,7 +200,7 @@ const styles = StyleSheet.create({
     height: 220, 
     borderRadius: 110, 
     backgroundColor: theme.orange, 
-    opacity: 0.2, // Opacity'yi artırdım
+    opacity: 0.2, 
   },
 
   content: { 
@@ -170,7 +208,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30, 
     justifyContent: 'center', 
     alignItems: 'center',
-    backgroundColor: 'transparent' // Arkadaki daireleri görmesi için şeffaf olmalı
+    backgroundColor: 'transparent' 
   },
   
   logoContainer: { 

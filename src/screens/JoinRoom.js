@@ -4,6 +4,9 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
+// 🚀 DÜZELTME 1: auth modülü eklendi
+import { auth } from '../services/firebase';
+
 const { width } = Dimensions.get('window');
 
 export default function JoinRoom({ navigation }) {
@@ -24,9 +27,17 @@ export default function JoinRoom({ navigation }) {
 
     const cleanCode = code.toUpperCase().trim();
 
+    // 🚀 DÜZELTME 2: Firebase'den kullanıcının kendi ismini çekiyoruz
+    const currentUserName = auth.currentUser?.displayName || 'Misafir';
+
     navigation.navigate('AvatarScreen', {
       nextScreen: 'LobbyScreen',
-      extraParams: { roomId: cleanCode, isHost: false } 
+      // 🚀 DÜZELTME 3: myName verisini extraParams ile lobiye taşıyoruz
+      extraParams: { 
+        roomId: cleanCode, 
+        isHost: false,
+        myName: currentUserName 
+      } 
     });
   };
 

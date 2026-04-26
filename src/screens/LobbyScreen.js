@@ -1,52 +1,53 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Share, Image, ScrollView, Dimensions, Platform, Alert } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StackActions } from '@react-navigation/native';
 
-// 🔥 FIREBASE BAĞLANTILARI
-import { database } from '../services/firebase';
-import { ref, set, onValue, update, remove } from 'firebase/database';
+// 🔥 FIREBASE BAĞLANTILARI (auth eklendi)
+import { database, auth } from '../services/firebase';
+import { ref as dbRef, set, onValue, update, remove } from 'firebase/database';
 
 const { width } = Dimensions.get('window');
 const MAX_PLAYERS = 4;
 
 export default function LobbyScreen({ route, navigation }) {
   const isHost = route.params?.isHost ?? false;
-  const initialRoomId = route.params?.roomId ?? null;
+  
+  const incomingRoomId = route.params?.roomId;
+  const initialRoomId = typeof incomingRoomId === 'string' ? incomingRoomId.trim().toUpperCase() : null;
 
   const [roomId, setRoomId] = useState(initialRoomId);
-  const [myName, setMyName] = useState(route.params?.myName || 'Sinem');
+  
+  // 🚀 İŞTE DÜZELTME BURADA: "Sinem" silindi, doğrudan hesaba (auth) bağlandı!
+  const [myName, setMyName] = useState(
+    route.params?.myName || auth.currentUser?.displayName || 'Oyuncu'
+  );
+  
   const [myAvatarSeed, setMyAvatarSeed] = useState(route.params?.userAvatar || 'Oliver');
   const [players, setPlayers] = useState([]);
   const [isReady, setIsReady] = useState(isHost);
   
-  // 🎯 KRİTİK: userId'yi sadece bir kez oluşturuyoruz
   const [userId] = useState("USER_" + Math.random().toString(36).substring(7));
+  const hasNavigated = useRef(false);
 
   useEffect(() => {
-    // 🎯 KRİTİK DÜZELTME 1: currentRoomId'yi yerel bir değişkende tutuyoruz
-    let currentRoomId = roomId; 
+    let currentRoomId = initialRoomId;
     
-    // 1. HOST İSE VE ODA HENÜZ OLUŞTURULMADIYSA
     if (isHost && !currentRoomId) {
       currentRoomId = Math.random().toString(36).substring(7).toUpperCase();
-      setRoomId(currentRoomId); // State'i sadece burada, oda yoksa güncelliyoruz
+      setRoomId(currentRoomId);
       
-      const newRoomRef = ref(database, `rooms/${currentRoomId}`);
-      set(newRoomRef, {
+      set(dbRef(database, `rooms/${currentRoomId}`), {
         status: 'waiting',
         hostId: userId,
-        createdAt: Date.now(),
+        createdAt: Date.now()
       });
     }
 
-    // 2. OYUNCU EKLEME VE DİNLEME
     if (currentRoomId) {
-      const roomRef = ref(database, `rooms/${currentRoomId}`);
-      const myPlayerRef = ref(database, `rooms/${currentRoomId}/players/${userId}`);
-      
+      const myPlayerRef = dbRef(database, `rooms/${currentRoomId}/players/${userId}`);
       set(myPlayerRef, {
         name: myName,
         avatar: myAvatarSeed,
@@ -54,58 +55,64 @@ export default function LobbyScreen({ route, navigation }) {
         isHost: isHost
       });
 
+      const roomRef = dbRef(database, `rooms/${currentRoomId}`);
       const unsubscribe = onValue(roomRef, (snapshot) => {
         const data = snapshot.val();
+        
         if (data) {
           if (data.players) {
-            const playersArray = Object.entries(data.players).map(([id, details]) => ({
-              id: id,
-              ...details
+            const playersArray = Object.keys(data.players).map(key => ({
+              id: key,
+              ...data.players[key]
             }));
             setPlayers(playersArray);
           }
-          
-          if (data.status === 'playing') {
+
+          if (data.status === 'playing' && !hasNavigated.current) {
+            hasNavigated.current = true; 
             navigation.dispatch(
-              StackActions.replace('RoomScreen', { 
+              StackActions.replace('LobbyRoom', { 
                 roomId: currentRoomId, 
                 myAvatarSeed, 
-                myName,
-                isHost 
+                myName 
               })
             );
           }
+        } else if (!hasNavigated.current) {
+          Alert.alert("Oda Kapandı", "Oda kurucusu lobiden ayrıldı.");
+          navigation.navigate('Home');
         }
       });
+
       return () => {
-        unsubscribe();
-        if (isHost) {
-          remove(ref(database, `rooms/${currentRoomId}`));
-        } else {
-          remove(myPlayerRef);
+        unsubscribe(); 
+        if (!hasNavigated.current && currentRoomId) {
+          if (isHost) {
+            remove(dbRef(database, `rooms/${currentRoomId}`));
+          } else {
+            remove(dbRef(database, `rooms/${currentRoomId}/players/${userId}`));
+          }
         }
       };
     }
-  }, [roomId]); // RoomId oluştuktan sonra tetiklenir
-
-  // Yeni avatar senkronizasyonu
+  }, []);
+  
   useEffect(() => {
     if (route.params?.userAvatar && roomId) {
       const newAvatar = route.params.userAvatar;
       setMyAvatarSeed(newAvatar);
-      update(ref(database, `rooms/${roomId}/players/${userId}`), {
+      
+      update(dbRef(database, `rooms/${roomId}/players/${userId}`), {
         avatar: newAvatar
       });
     }
-  }, [route.params?.userAvatar]);
+  }, [route.params?.userAvatar, roomId]);
 
   const toggleReady = () => {
     if (!roomId) return;
     const newReadyState = !isReady;
     setIsReady(newReadyState);
-    update(ref(database, `rooms/${roomId}/players/${userId}`), {
-      isReady: newReadyState
-    });
+    update(dbRef(database, `rooms/${roomId}/players/${userId}`), { isReady: newReadyState });
   };
 
   const startGame = () => {
@@ -119,15 +126,12 @@ export default function LobbyScreen({ route, navigation }) {
       Alert.alert("Bekle!", "Tüm oyuncuların hazır olması gerekiyor.");
       return;
     }
-    update(ref(database, `rooms/${roomId}`), {
-      status: 'playing' 
-    });
+    update(dbRef(database, `rooms/${roomId}`), { status: 'playing' });
   };
 
   const onShare = async () => {
-    try {
-      await Share.share({ message: `Meme Kapışması odama gel! Kodun: ${roomId}` });
-    } catch (error) { console.log(error.message); }
+    try { await Share.share({ message: `Meme Kapışması odama gel! Kodun: ${roomId}` }); } 
+    catch (error) { console.log(error.message); }
   };
 
   const renderSlots = () => {
@@ -135,37 +139,23 @@ export default function LobbyScreen({ route, navigation }) {
     for (let i = 0; i < MAX_PLAYERS; i++) {
       const player = players[i];
       if (player) {
-        // 🎯 ARTIK "Sen" KONTROLÜ YAPMIYORUZ, DİREKT FIREBASE NICKNAME'İ ÇEKİYORUZ
+        const isMe = player.id === userId;
         slots.push(
           <View key={player.id} style={styles.playerSlot}>
             <View style={styles.activeAvatarContainer}>
-              <Image 
-                source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${player.avatar}&backgroundColor=FFDC5E` }} 
-                style={styles.miniAvatar} 
-              />
-              {/* Hazır durumuna göre renk değişen küçük nokta */}
+              <Image source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${player.avatar}&backgroundColor=FFDC5E` }} style={styles.miniAvatar} />
               <View style={[styles.statusIndicatorActive, !player.isReady && { backgroundColor: '#FF8A00' }]} />
             </View>
-            
-            {/* 🚀 BURASI DEĞİŞTİ: Direkt player.name basılıyor */}
-            <Text style={styles.playerName} numberOfLines={1}>
-              {player.name}
-            </Text>
-            
-            <Text style={[styles.statusTextActive, !player.isReady && { color: '#FF8A00' }]}>
-              {player.isReady ? "Hazır" : "Bekliyor"}
-            </Text>
+            <Text style={styles.playerName} numberOfLines={1}>{isMe ? "Sen" : player.name}</Text>
+            <Text style={[styles.statusTextActive, !player.isReady && { color: '#FF8A00' }]}>{player.isReady ? "Hazır" : "Bekliyor"}</Text>
           </View>
         );
       } else {
-        // Boş slot tasarımı (Aynı kalabilir)
         slots.push(
           <View key={`empty-${i}`} style={styles.playerSlot}>
-            <View style={styles.emptyAvatarCircle}>
-              <Ionicons name="person-outline" size={22} color="#9CA3AF" />
-            </View>
+            <View style={styles.emptyAvatarCircle}><Ionicons name="person-outline" size={22} color="#9CA3AF" /></View>
             <Text style={styles.playerNameEmpty}>Boş</Text>
-            <Text style={styles.statusTextWaiting}>Bekleniyor...</Text>
+            <Text style={styles.statusTextWaiting}>Bekleniyor</Text>
           </View>
         );
       }
@@ -185,96 +175,47 @@ export default function LobbyScreen({ route, navigation }) {
         </View>
 
         <View style={styles.profileSection}>
-          <TouchableOpacity 
-            activeOpacity={0.8}
-            style={styles.avatarWrapper}
-            onPress={() => navigation.navigate('AvatarScreen', { nextScreen: 'LobbyScreen', myName })}
-          >
-            <Image 
-              source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${myAvatarSeed}&backgroundColor=ffffff` }} 
-              style={styles.avatarImage} 
-            />
-            <View style={styles.editIconContainer}>
-              <MaterialCommunityIcons name="pencil" size={16} color="white" />
-            </View>
+          <TouchableOpacity activeOpacity={0.8} style={styles.avatarWrapper} onPress={() => navigation.navigate('AvatarScreen', { nextScreen: 'LobbyScreen', myName })}>
+            <Image source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${myAvatarSeed}&backgroundColor=ffffff` }} style={styles.avatarImage} />
+            <View style={styles.editIconContainer}><MaterialCommunityIcons name="pencil" size={16} color="white" /></View>
           </TouchableOpacity>
           <Text style={styles.welcomeText}>Hoş geldin, <Text style={styles.nameHighlight}>{myName}</Text></Text>
         </View>
       </LinearGradient>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
         <View style={styles.card}>
           <View style={styles.roomCodeContainer}>
             <View>
               <Text style={styles.cardSubtitle}>KATILIM KODU</Text>
               <Text style={styles.roomCodeText}>{roomId || '...'}</Text>
             </View>
-            <TouchableOpacity style={styles.shareButton} onPress={onShare}>
-               <Ionicons name="share-social" size={22} color="#FF69EB" />
-            </TouchableOpacity>
+            <TouchableOpacity style={styles.shareButton} onPress={onShare}><Ionicons name="share-social" size={22} color="#FF69EB" /></TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.card}>
            <View style={styles.cardHeaderRow}>
               <Text style={styles.cardTitle}>Mevcut Oyuncular</Text>
-              <View style={styles.playerCountBadge}>
-                <Text style={styles.playerCountText}>{players.length} / {MAX_PLAYERS}</Text>
-              </View>
+              <View style={styles.playerCountBadge}><Text style={styles.playerCountText}>{players.length} / {MAX_PLAYERS}</Text></View>
            </View>
-           
-           <View style={styles.playerGrid}>
-              {renderSlots()}
-           </View>
+           <View style={styles.playerGrid}>{renderSlots()}</View>
         </View>
 
         <View style={styles.qrCard}>
            <Text style={styles.qrTitle}>Hızlı Katılım</Text>
            <Text style={styles.qrDescription}>Arkadaşların bu kodu taratarak odaya doğrudan katılabilir.</Text>
            <View style={styles.qrContainer}>
-              {roomId ? (
-                <QRCode 
-                  value={`memetable://join/${roomId}`} 
-                  size={90} 
-                  color="#1F2937" 
-                  backgroundColor="transparent" 
-                />
-              ) : null}
+              {roomId ? <QRCode value={roomId} size={90} color="#1F2937" backgroundColor="transparent" /> : null}
            </View>
         </View>
       </ScrollView>
 
       <View style={styles.footerContainer}>
-        <TouchableOpacity 
-          style={[
-            styles.actionButtonContainer, 
-            (isHost && players.length < 2) && { opacity: 0.5 }
-          ]} 
-          activeOpacity={0.9}
-          onPress={isHost ? startGame : toggleReady}
-          disabled={isHost && players.length < 2}
-        >
-          <LinearGradient 
-            colors={
-              isHost 
-                ? (players.length < 2 ? ['#9CA3AF', '#6B7280'] : ['#FFBF81', '#FF69EB']) 
-                : isReady ? ['#FFBF81', '#FF69EB'] : ['#9CA3AF', '#6B7280']
-            } 
-            style={styles.actionButton} 
-            start={{x: 0, y: 0}} 
-            end={{x: 1, y: 1}}
-          >
-            <Text style={styles.actionButtonText}>
-              {isHost 
-                ? (players.length < 2 ? "OYUNCU BEKLENİYOR..." : "OYUNU BAŞLAT") 
-                : (isReady ? "HAZIRIM (İPTAL ET)" : "HAZIR DEĞİLİM")}
-            </Text>
-            <Ionicons 
-              name={isHost ? (players.length < 2 ? "time-outline" : "play") : (isReady ? "checkmark-circle" : "close-circle")} 
-              size={22} 
-              color="white" 
-            />
+        <TouchableOpacity style={[styles.actionButtonContainer, (isHost && players.length < 2) && { opacity: 0.5 }]} activeOpacity={0.9} onPress={isHost ? startGame : toggleReady} disabled={isHost && players.length < 2}>
+          <LinearGradient colors={isHost ? (players.length < 2 ? ['#9CA3AF', '#6B7280'] : ['#FFBF81', '#FF69EB']) : isReady ? ['#FFBF81', '#FF69EB'] : ['#9CA3AF', '#6B7280']} style={styles.actionButton} start={{x: 0, y: 0}} end={{x: 1, y: 1}}>
+            <Text style={styles.actionButtonText}>{isHost ? (players.length < 2 ? "OYUNCU BEKLENİYOR..." : "OYUNU BAŞLAT") : (isReady ? "HAZIRIM (İPTAL ET)" : "HAZIR DEĞİLİM")}</Text>
+            <Ionicons name={isHost ? (players.length < 2 ? "time-outline" : "play") : (isReady ? "checkmark-circle" : "close-circle")} size={22} color="white" />
           </LinearGradient>
         </TouchableOpacity>
       </View>

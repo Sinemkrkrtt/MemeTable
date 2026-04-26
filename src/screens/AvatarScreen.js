@@ -3,6 +3,9 @@ import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Dimensions, 
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { StackActions } from '@react-navigation/native'; 
+// 🔥 EKLEME: Firebase güncellenmesi için gerekli importlar
+import { doc, updateDoc } from 'firebase/firestore';
+import { db, auth } from '../services/firebase';
 
 const { width } = Dimensions.get('window');
 
@@ -14,16 +17,33 @@ const AVATAR_LIST = [
 export default function AvatarScreen({ navigation, route }) {
   const [selected, setSelected] = useState('Oliver');
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => { 
     const { nextScreen, extraParams } = route.params || {};
     
+    // 🔥 EKLEME: Seçilen avatarı Firebase'e kaydet (Böylece her yerde güncel kalır)
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, { avatarSeed: selected });
+      } catch (error) {
+        console.log("Avatar kaydedilemedi:", error);
+      }
+    }
+    
+    // 🚀 DÜZELTME: İsmi ararken önce extraParams'a (JoinRoom'dan gelen), 
+    // sonra route.params'a (Home'dan gelen), en son Firebase Auth'a bakarız.
+    const currentName = extraParams?.myName || route.params?.myName || auth.currentUser?.displayName || 'Oyuncu';
+
     if (nextScreen) {
-      // 🎯 .replace kullanarak geçmişi temizliyoruz, böylece oyundan çıkınca buraya dönmezsin.
       navigation.dispatch(
         StackActions.replace(nextScreen, {
           ...extraParams,
-          userAvatar: selected, // 🚀 BURAYI DEĞİŞTİRDİK: LobbyScreen 'userAvatar' ismini bekliyor
-          myName: route.params?.myName || 'Sinem'
+          // 🚀 KRİTİK DÜZELTME: Hem 'userAvatar' hem 'myAvatarSeed' gönderiyoruz 
+          // Böylece RoomScreen (myAvatarSeed) ve Lobby (userAvatar) ikisi de mutlu olur.
+          userAvatar: selected, 
+          myAvatarSeed: selected, 
+          myName: currentName // 🎯 Sabit "Sinem" yazısı kaldırıldı, dinamik isim bağlandı!
         })
       );
     } else {
@@ -43,7 +63,6 @@ export default function AvatarScreen({ navigation, route }) {
           source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${item}&backgroundColor=ffffff` }} 
           style={[styles.avatarImage, isSelected && { transform: [{ scale: 1.15 }] }]} 
         />
-        {/* 🎯 İsimleri sildik, sadece aktifse minik bir belirteç bıraktık */}
         {isSelected && <View style={styles.activeIndicator} />}
       </TouchableOpacity>
     );
@@ -53,7 +72,6 @@ export default function AvatarScreen({ navigation, route }) {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
       
-      {/* HEADER */}
       <View style={styles.minimalHeader}>
         <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.navigate('Home')}>
           <Ionicons name="chevron-back" size={24} color="#333" />
@@ -62,7 +80,6 @@ export default function AvatarScreen({ navigation, route }) {
         <View style={{ width: 44 }} /> 
       </View>
 
-      {/* SHOWCASE */}
       <View style={styles.showcase}>
         <View style={styles.previewRing}>
            <Image 
@@ -73,7 +90,6 @@ export default function AvatarScreen({ navigation, route }) {
         <Text style={styles.instructionText}>Masadaki yeni tarzını belirle</Text>
       </View>
 
-      {/* GRID LIST */}
       <FlatList
         data={AVATAR_LIST}
         renderItem={renderItem}
@@ -83,7 +99,6 @@ export default function AvatarScreen({ navigation, route }) {
         showsVerticalScrollIndicator={false}
       />
 
-      {/* FOOTER BUTTON */}
       <View style={styles.footerContainer}>
         <TouchableOpacity style={styles.premiumButton} onPress={handleConfirm} activeOpacity={0.8}>
           <LinearGradient 
@@ -119,7 +134,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: { fontSize: 18, fontFamily: 'Nunito_900Black', color: '#1D1D1F' },
-
   showcase: { alignItems: 'center', paddingVertical: 25 },
   previewRing: {
     width: 130,
@@ -137,11 +151,10 @@ const styles = StyleSheet.create({
   },
   previewImage: { width: 120, height: 120 },
   instructionText: { marginTop: 15, fontSize: 14, fontFamily: 'Nunito_600SemiBold', color: '#8E8E93' },
-
   listPadding: { paddingHorizontal: 20, paddingBottom: 140 },
   card: {
     flex: 1,
-    aspectRatio: 1, // Kare kartlar
+    aspectRatio: 1,
     margin: 8,
     borderRadius: 24,
     backgroundColor: '#F5F5F7',
@@ -167,7 +180,6 @@ const styles = StyleSheet.create({
     borderRadius: 3, 
     backgroundColor: '#FF00D6' 
   },
-
   footerContainer: {
     position: 'absolute',
     bottom: 0,

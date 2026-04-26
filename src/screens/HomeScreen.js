@@ -93,12 +93,12 @@ export default function HomeScreen({ navigation, route }) {
   const onPressOut = () => Animated.spring(scalePress, { toValue: 1, friction: 4, tension: 40, useNativeDriver: true }).start();
 
   const handleNavigateWithAvatar = (targetScreen, additionalParams = {}) => {
-    navigation.navigate('AvatarScreen', {
-      from: 'HomeScreen',
-      nextScreen: targetScreen,
-      extraParams: additionalParams
-    });
-  };
+  navigation.navigate('AvatarScreen', {
+    nextScreen: targetScreen, // RoomScreen
+    extraParams: additionalParams, // { mode: 'public' } vb.
+    myName: nickname // Firebase'den çektiğin nickname
+  });
+};
 
   if (!fontsLoaded) return null; 
 
@@ -129,10 +129,10 @@ export default function HomeScreen({ navigation, route }) {
           <View style={styles.gridContainer}>
             <Animated.View style={{ flex: 1.2, transform: [{ scale: scalePress }] }}>
               <TouchableOpacity 
-                activeOpacity={0.9} onPressIn={onPressIn} onPressOut={onPressOut} 
-                onPress={() => handleNavigateWithAvatar('RoomScreen', { mode: 'public' })} 
-                style={styles.bigActionCard}
-              >
+  activeOpacity={0.9} 
+  onPress={() => handleNavigateWithAvatar('RoomScreen', { mode: 'public' })} 
+  style={styles.bigActionCard}
+>
                 <LinearGradient colors={[palet.vibrant, palet.peach]} style={styles.cardInner}>
                   <View style={styles.cardHeader}><Ionicons name="flash" size={30} color="white" /><View style={styles.topRightArrow}><Ionicons name="arrow-up" size={22} color="white" /></View></View>
                   <View><Text style={styles.cardTitleBig}>HIZLI{"\n"}OYNA</Text><Text style={styles.cardSubTitle}>ANINDA EŞLEŞ</Text></View>
