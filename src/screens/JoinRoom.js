@@ -4,18 +4,20 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-// 🚀 DÜZELTME 1: auth modülü eklendi
-import { auth } from '../services/firebase';
+// 🚀 DÜZELTME: Firebase Firestore'dan getDoc ve db eklendi!
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../services/firebase';
 
 const { width } = Dimensions.get('window');
 
-export default function JoinRoom({ navigation }) {
+export default function JoinRoom({ navigation, route }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [manualCode, setManualCode] = useState('');
 
-  const handleJoinRoom = (rawData) => {
-    if (!rawData || rawData.trim().length === 0) return;
+  // 🚀 DÜZELTME: Fonksiyonu async yaptık ki Firebase'i bekleyebilsin
+  const handleJoinRoom = async (rawData) => {
+    if (!rawData || rawData.trim().length === 0 || scanned) return;
     
     setScanned(true); 
     let code = rawData.trim();
@@ -27,18 +29,45 @@ export default function JoinRoom({ navigation }) {
 
     const cleanCode = code.toUpperCase().trim();
 
-    // 🚀 DÜZELTME 2: Firebase'den kullanıcının kendi ismini çekiyoruz
-    const currentUserName = auth.currentUser?.displayName || 'Misafir';
+    if (cleanCode.includes('.') || cleanCode.includes(':')) {
+      alert("Geçersiz QR! Lütfen sadece oyun içi oda kodunu okutun.");
+      setTimeout(() => setScanned(false), 2000); 
+      return; 
+    }
 
-    navigation.navigate('AvatarScreen', {
-      nextScreen: 'LobbyScreen',
-      // 🚀 DÜZELTME 3: myName verisini extraParams ile lobiye taşıyoruz
-      extraParams: { 
-        roomId: cleanCode, 
-        isHost: false,
-        myName: currentUserName 
-      } 
+    const params = route.params || {};
+    const selectedAvatar = params.userAvatar || params.myAvatarSeed || 'Oliver';
+
+    // 🚀 KESİN ÇÖZÜM: İsmi sağdan soldan değil, TAM ŞU AN Firebase'den (nickname) çekiyoruz!
+    let currentUserName = 'Oyuncu'; // Varsayılan
+    const user = auth.currentUser;
+    
+    if (user) {
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists() && userSnap.data().nickname) {
+          currentUserName = userSnap.data().nickname; // Gerçek nicknamen geldi!
+        } else {
+          currentUserName = user.displayName || 'Oyuncu';
+        }
+      } catch (error) {
+        console.log("İsim çekilirken hata:", error);
+        currentUserName = params.myName || user.displayName || 'Oyuncu';
+      }
+    }
+
+    // Her şey yolundaysa Lobby'e git
+    navigation.replace('LobbyScreen', { 
+      roomId: cleanCode, 
+      isHost: false,
+      myName: currentUserName, // 🎯 Yüzde yüz Firebase'den gelen isim!
+      userAvatar: selectedAvatar,
+      myAvatarSeed: selectedAvatar
     });
+
+    setTimeout(() => setScanned(false), 1500);
   };
 
   if (!permission) return <View style={styles.container} />;
@@ -81,7 +110,7 @@ export default function JoinRoom({ navigation }) {
             <CameraView
               style={styles.camera}
               facing="back"
-              onBarcodeScanned={scanned ? undefined : ({ data }) => handleJoinRoom(data)}
+              onBarcodeScanned={scanned ? null : ({ data }) => handleJoinRoom(data)}
             />
             {/* 🎨 ODAK KÖŞELERİ - FFDC5E (Sarı Tonu) */}
             <View style={[styles.corner, styles.topLeft, { borderColor: '#FFDC5E' }]} />
@@ -101,7 +130,6 @@ export default function JoinRoom({ navigation }) {
         <View style={styles.manualInputContainer}>
           <Text style={styles.inputLabel}>Oda Kodunu Gir</Text>
           <View style={styles.inputWrapper}>
-            {/* 🎨 İKON RENGİ - FF69EB (Pembe Tonu) */}
             <Ionicons name="keypad" size={20} color="#FF69EB" style={styles.inputIcon} />
             <TextInput
               style={styles.textInput}
@@ -119,7 +147,6 @@ export default function JoinRoom({ navigation }) {
             disabled={manualCode.length < 3}
             onPress={() => handleJoinRoom(manualCode)}
           >
-            {/* 🎨 BUTON GEÇİŞİ - FFBF81'den FF69EB'ye */}
             <LinearGradient colors={['#FFBF81', '#FF69EB']} style={styles.joinBtnGradient}>
               <Text style={styles.joinBtnText}>MASAYA OTUR</Text>
               <Ionicons name="arrow-forward" size={20} color="white" />
@@ -131,6 +158,8 @@ export default function JoinRoom({ navigation }) {
     </KeyboardAvoidingView>
   );
 }
+
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' },

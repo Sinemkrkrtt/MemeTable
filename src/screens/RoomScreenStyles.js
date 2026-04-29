@@ -12,12 +12,13 @@ export const styles = StyleSheet.create({
   tableContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: -30 },
 
   mainTableRim: { 
-    width: '72%', height: '75%', 
+    width: '70%', height: '72%', 
     backgroundColor: '#FF86C8', 
     borderRadius: 140, 
     borderWidth: 8, borderColor: 'rgba(255, 255, 255, 0.95)', 
     justifyContent: 'center', alignItems: 'center', 
     elevation: 35, 
+    marginLeft:50,
     shadowColor: '#FF00D6', shadowOpacity: 0.25, shadowRadius: 30, shadowOffset: { width: 0, height: 15 } 
   },
   tableSurface: { 
@@ -55,7 +56,7 @@ export const styles = StyleSheet.create({
   // ==========================================
   // 3. SOL KENAR HUD (JOKER MENÜSÜ - YENİ)
   // ==========================================
-  hudWrapper: { position: 'absolute', left: 15, top: '12%', zIndex: 9999 },
+  hudWrapper: { position: 'absolute', left: 55, top: '10%', zIndex: 9999 },
   hudContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.7)', // Cam efekti
     paddingVertical: 15, paddingHorizontal: 12,
@@ -63,15 +64,15 @@ export const styles = StyleSheet.create({
     alignItems: 'center', gap: 12, 
     shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 15, elevation: 10,
   },
-  hudTitleIcon: { opacity: 0.7, marginBottom: 5 },
+  hudTitleIcon: { opacity: 0.7, marginBottom:5 },
   jokerIconWrapper: { alignItems: 'center' },
   jokerButton: {
-    width: 48, height: 48, borderRadius: 18, 
+    width: 40, height: 50, borderRadius: 18, 
     backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', 
     borderWidth: 1, borderColor: '#F0F0F0',
     elevation: 6, shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }
   },
-  jokerLogo: { width: 32, height: 32 },
+  jokerLogo: { width: 32, height: 32, resizeMode: 'contain' },
   jokerBadge: {
     position: 'absolute', top: -6, right: -6, 
     minWidth: 20, height: 20, borderRadius: 10, 

@@ -7,11 +7,27 @@ import { OFFICIAL_MEMES } from '../memeData';
 import { styles } from './RoomScreenStyles';
 import ScoreScreen from './scoreScreen';
 import JokerModal from './JokerModal'; 
-import { doc, updateDoc, increment } from 'firebase/firestore';
-import { db, auth, database } from '../services/firebase'; 
-import { ref, onValue } from 'firebase/database'; 
+import { doc, getDoc, updateDoc, increment, onSnapshot } from 'firebase/firestore';
+import { db, auth, database } from '../services/firebase';
+import { ref, onValue, update, onDisconnect, remove } from 'firebase/database'; 
+import { SITUATION_PROMPTS } from './situationPrompts';
+import DisconnectModal from './DisconnectModal'; // Dosya yolunu kontrol et
 
-// ❄️ KAR TANESİ ANİMASYON BİLEŞENİ
+const hashStr = (str) => {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = Math.imul(31, h) + str.charCodeAt(i) | 0;
+  return h;
+};
+
+const mulberry32 = (a) => {
+  return () => {
+    let t = a += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+};
+
 const Snowflake = ({ delay, left, size }) => {
   const fallAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -29,29 +45,20 @@ const Snowflake = ({ delay, left, size }) => {
     ).start();
   }, []);
 
-  const translateY = fallAnim.interpolate({ 
-    inputRange: [0, 1], 
-    outputRange: [-20, 80] 
-  });
+  const translateY = fallAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 80] });
 
   return (
     <Animated.Text style={{
       position: 'absolute', left: left, top: -10, fontSize: size,
-      opacity: fadeAnim, transform: [{ translateY }],
-      textShadowColor: '#00E5FF', textShadowRadius: 8
-    }}>
-      ❄️
-    </Animated.Text>
+      opacity: fadeAnim, transform: [{ translateY }], textShadowColor: '#00E5FF', textShadowRadius: 8
+    }}>❄️</Animated.Text>
   );
 };
 
 export default function RoomScreen({ navigation, route }) {
   const { width, height } = useWindowDimensions();
-  
-  // 🎯 LOBİDEN GELEN GERÇEK VERİLER
-  const { roomId, myAvatarSeed, myName } = route?.params || { roomId: null, myAvatarSeed: 'Oliver', myName: 'Ben' };
+  const { roomId, myAvatarSeed, myName, isHost } = route?.params || { roomId: null, myAvatarSeed: 'Oliver', myName: 'Ben', isHost: false };
 
-  // --- STATE'LER ---
   const [players, setPlayers] = useState([]); 
   const [myHand, setMyHand] = useState([]);
   const [selectedCard, setSelectedCard] = useState(null);
@@ -64,64 +71,121 @@ export default function RoomScreen({ navigation, route }) {
   const [scores, setScores] = useState({}); 
   const [roundEnded, setRoundEnded] = useState(false); 
   const [winnerName, setWinnerName] = useState(""); 
-  const [isJokerMenuVisible, setIsJokerMenuVisible] = useState(false);
   
-  // --- JOKER STATE'LERİ ---
-  const [jokerInventory, setJokerInventory] = useState({ joker1: 2, joker2: 5, joker3: 1, joker4: 2 }); 
-  const [isDoublePoints, setIsDoublePoints] = useState(false); 
+  const [currentPrompt, setCurrentPrompt] = useState("Durum bekleniyor..."); 
+
+  // 🚀 DÜZELTME 1: State İsimleri Veritabanındaki Gibi Güncellendi
+  const [jokerInventory, setJokerInventory] = useState({ joker_skip: 0, joker_double: 0, joker_freeze: 0 }); 
+  const [isJokerMenuVisible, setIsJokerMenuVisible] = useState(false);
   const [isTimeFrozen, setIsTimeFrozen] = useState(false);
 
-  // --- ANİMASYONLAR ---
   const popAnim = useRef(new Animated.Value(0)).current; 
   const flipAnim = useRef(new Animated.Value(0)).current; 
   const announcementAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const timeLeftAnim = useRef(new Animated.Value(1)).current;
 
-  // --- EFEKTLER ---
+  const currentRoundRef = useRef(1);
+  const initialHandDrawn = useRef(false);
+  const me = players.find(p => p.name === myName);
+  const amIHost = isHost || (players.length > 0 && players[0].name === myName);
+
+  // 🚀 DÜZELTME 2: Firebase'den Gelen Veri İsimleri AuthScreen.js'ye Göre Ayarlandı
   useEffect(() => {
-    const lockScreen = async () => {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-    };
+    let unsubscribeUser = () => {};
+    const user = auth.currentUser;
+    if (user) {
+      const userRef = doc(db, 'users', user.uid);
+      unsubscribeUser = onSnapshot(userRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setJokerInventory({
+            joker_skip: data.joker_skip || 0,
+            joker_double: data.joker_double || 0,
+            joker_freeze: data.joker_freeze || 0
+          });
+        }
+      });
+    }
+    return () => unsubscribeUser();
+  }, []);
+
+  useEffect(() => {
+    if (roomId && me?.id) {
+      const myPlayerRef = ref(database, `rooms/${roomId}/players/${me.id}`);
+      onDisconnect(myPlayerRef).remove();
+      return () => {
+        onDisconnect(myPlayerRef).cancel();
+        remove(myPlayerRef);
+      };
+    }
+  }, [roomId, me?.id]);
+
+  const stateRefs = useRef({ hasPlayed, votedCardId, myHand, playedCards });
+  useEffect(() => {
+    stateRefs.current = { hasPlayed, votedCardId, myHand, playedCards };
+  }, [hasPlayed, votedCardId, myHand, playedCards]);
+
+  useEffect(() => {
+    const lockScreen = async () => await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
     lockScreen();
     
     if (roomId) {
       const playersRef = ref(database, `rooms/${roomId}/players`);
-      const unsubscribe = onValue(playersRef, (snapshot) => {
+      const unsubscribePlayers = onValue(playersRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
-          const playersArray = Object.keys(data).map(key => ({
-            id: key,
-            ...data[key]
-          }));
+          const playersArray = Object.keys(data).map(key => ({ id: key, ...data[key] }));
           setPlayers(playersArray);
-
+          
           setScores(prevScores => {
             const newScores = { ...prevScores };
-            playersArray.forEach(p => {
-              if (newScores[p.name] === undefined) newScores[p.name] = 0;
-            });
+            playersArray.forEach(p => { if (newScores[p.name] === undefined) newScores[p.name] = 0; });
             return newScores;
           });
+
+          if (!initialHandDrawn.current) {
+            const sortedPlayers = [...playersArray].sort((a, b) => a.name.localeCompare(b.name));
+            const myIdx = sortedPlayers.findIndex(p => p.name === myName);
+            
+            if (myIdx !== -1) {
+              const seed = hashStr(roomId || 'default');
+              const rand = mulberry32(seed);
+              const sharedDeck = [...OFFICIAL_MEMES].sort(() => rand() - 0.5);
+              const startIdx = (myIdx * 5) % Math.max(1, sharedDeck.length - 5);
+              setMyHand(sharedDeck.slice(startIdx, startIdx + 5));
+              initialHandDrawn.current = true;
+            }
+          }
+        }
+      });
+
+      const roomRef = ref(database, `rooms/${roomId}`);
+      const unsubscribeRoom = onValue(roomRef, (snapshot) => {
+        const roomData = snapshot.val();
+        if (roomData) {
+          if (roomData.round && roomData.round > currentRoundRef.current) {
+            currentRoundRef.current = roomData.round;
+            startNextRound(); 
+          }
+          if (roomData.currentPrompt) {
+            setCurrentPrompt(roomData.currentPrompt);
+          } else {
+            const randomPrompt = SITUATION_PROMPTS[Math.floor(Math.random() * SITUATION_PROMPTS.length)];
+            update(ref(database, `rooms/${roomId}`), { currentPrompt: randomPrompt });
+          }
         }
       });
       
-      const shuffle = [...OFFICIAL_MEMES].sort(() => 0.5 - Math.random());
-      setMyHand(shuffle.slice(0, 5));
       Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
 
-      return () => {
-        unsubscribe();
-        ScreenOrientation.unlockAsync();
-      };
+      return () => { unsubscribePlayers(); unsubscribeRoom(); ScreenOrientation.unlockAsync(); };
     }
   }, [roomId]);
 
   useEffect(() => {
     if (phase === 'PLAYING' && !isTimeFrozen) {
-      Animated.loop(
-        Animated.timing(rotateAnim, { toValue: 1, duration: 3000, useNativeDriver: true })
-      ).start();
+      Animated.loop(Animated.timing(rotateAnim, { toValue: 1, duration: 3000, useNativeDriver: true })).start();
     } else {
       rotateAnim.setValue(0);
     }
@@ -137,193 +201,291 @@ export default function RoomScreen({ navigation, route }) {
       useNativeDriver: false, 
     }).start();
 
-    if (timeLeft > 0 && !roundEnded && !isTimeFrozen) { 
+    const activePhases = ['READING', 'PLAYING', 'VOTING'];
+
+    if (timeLeft > 0 && activePhases.includes(phase) && !isTimeFrozen) { 
       timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
-    } else if (timeLeft === 0) {
+    } else if (timeLeft === 0 && activePhases.includes(phase)) {
       timeLeftAnim.setValue(1);
       
       if (phase === 'READING') {
         setPhase('PLAYING');
-        setTimeLeft(5); 
-      } else if (phase === 'PLAYING') {
-        processPlayingPhase();
-      } else if (phase === 'VOTING' && !votedCardId && !roundEnded) {
-        const opponentCards = playedCards.filter(c => !c.isMine);
-        if (opponentCards.length > 0) {
-          const randomOpponent = opponentCards[Math.floor(Math.random() * opponentCards.length)];
-          handleVote(randomOpponent.id);
+        setTimeLeft(10); 
+      } 
+      else if (phase === 'PLAYING') {
+        if (!stateRefs.current.hasPlayed && stateRefs.current.myHand.length > 0) {
+          handlePlayCard(stateRefs.current.myHand[0].id); 
         }
+        setPhase('WAITING_CARDS'); 
+      } 
+      else if (phase === 'VOTING') {
+        if (!stateRefs.current.votedCardId && stateRefs.current.playedCards.length > 0) {
+          const opponentCards = stateRefs.current.playedCards.filter(c => !c.isMine);
+          if (opponentCards.length > 0) {
+            const randomOpponent = opponentCards[Math.floor(Math.random() * opponentCards.length)];
+            handleVote(randomOpponent.id);
+          }
+        }
+        setPhase('WAITING_VOTES'); 
       }
     }
     return () => clearTimeout(timer);
-  }, [timeLeft, phase, roundEnded, isTimeFrozen]);
+  }, [timeLeft, phase, isTimeFrozen]);
 
-  // --- JOKER ÇALIŞTIRMA MANTIĞI ---
-  const handleUseJoker = (jokerId) => {
+  useEffect(() => {
+    if (phase === 'WAITING_CARDS') {
+      const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...');
+      const allPlayed = actualPlayers.length > 0 && actualPlayers.every(p => p.playedCard);
+      const timeout = setTimeout(() => moveToVotingPhase(), 3000); 
+      if (allPlayed) {
+        clearTimeout(timeout);
+        moveToVotingPhase();
+      }
+      return () => clearTimeout(timeout);
+    }
+  }, [phase, players]);
+
+  useEffect(() => {
+    if (phase === 'WAITING_VOTES') {
+      const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...');
+      const allVoted = actualPlayers.length > 0 && actualPlayers.every(p => p.votedFor);
+      const timeout = setTimeout(() => calculateResults(), 3000);
+      if (allVoted) {
+        clearTimeout(timeout);
+        calculateResults();
+      }
+      return () => clearTimeout(timeout);
+    }
+  }, [phase, players]);
+
+  const [isConnected, setIsConnected] = useState(true);
+
+useEffect(() => {
+  // Firebase bağlantı durumunu dinle
+  const connectedRef = ref(database, ".info/connected");
+  const unsubscribeConnection = onValue(connectedRef, (snap) => {
+    // snap.val() true ise bağlı, false ise kopuk
+    setIsConnected(snap.val() === true);
+  });
+
+  return () => unsubscribeConnection();
+}, []);
+
+  // 🚀 DÜZELTME 3: Firebase'den Jokerin Düşürülmesi (AuthScreen'deki gibi Ana Dizinden)
+  const handleUseJoker = async (jokerId) => {
     if (jokerInventory[jokerId] <= 0) return; 
-    setJokerInventory(prev => ({ ...prev, [jokerId]: prev[jokerId] - 1 }));
+
+    const user = auth.currentUser;
+    if (user) {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        [jokerId]: increment(-1) // jokers.joker_skip YERİNE direkt joker_skip
+      }).catch(e => console.error("Joker düşerken hata:", e));
+    }
 
     switch (jokerId) {
-      case 'joker1': 
-        if (myHand.length > 0) {
-          const cardToSwap = selectedCard || myHand[0].id;
-          const randomNewCard = [...OFFICIAL_MEMES].sort(() => 0.5 - Math.random())[0];
-          setMyHand(prev => prev.map(c => 
-            c.id === cardToSwap ? { ...randomNewCard, id: Math.random().toString() } : c
-          ));
-          setSelectedCard(null);
-        }
-        break;
-      case 'joker2': 
-        if (myHand.length > 0) {
-          const currentHandSize = myHand.length; 
-          const newHand = [...OFFICIAL_MEMES].sort(() => 0.5 - Math.random()).slice(0, currentHandSize);
-          setMyHand(newHand);
-          setSelectedCard(null); 
-        }
-        break;
-      case 'joker3': 
-        setIsTimeFrozen(true); 
-        break;
-      case 'joker4': 
-        setIsDoublePoints(true);
-        break;
+        case 'joker_skip': 
+          setMyHand([...OFFICIAL_MEMES].sort(() => Math.random() - 0.5).slice(0, 5));
+          break;
+        case 'joker_double': 
+          if (selectedCard) {
+            const randomCard = OFFICIAL_MEMES[Math.floor(Math.random() * OFFICIAL_MEMES.length)];
+            setMyHand(prev => prev.map(c => c.id === selectedCard ? {...randomCard, id: Math.random().toString()} : c));
+            setSelectedCard(null);
+          } else { alert("Önce bir kart seç!"); }
+          break;
+        case 'joker_freeze': 
+          setIsTimeFrozen(true); 
+          setTimeout(() => setIsTimeFrozen(false), 5000);
+          break;
     }
     setIsJokerMenuVisible(false);
   };
+  
+  const handlePlayCard = (autoCardId = null) => {
+    const targetCardId = typeof autoCardId === 'string' ? autoCardId : selectedCard;
+    if (targetCardId) {
+      const cardToPlay = stateRefs.current.myHand.find(c => c.id === targetCardId);
+      if (!cardToPlay) return;
+      
+      setStagedCard(cardToPlay); 
+      setMyHand(prev => prev.filter(c => c.id !== targetCardId)); 
+      setSelectedCard(null);
+      setHasPlayed(true); 
+      setIsTimeFrozen(false); 
 
-  // --- OYUN MANTIĞI ---
-  const processPlayingPhase = () => {
+      if (me?.id) {
+        update(ref(database, `rooms/${roomId}/players/${me.id}`), { playedCard: cardToPlay });
+      }
+    }
+  };
+
+  const moveToVotingPhase = () => {
+    const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...' && p.playedCard);
+    const tableCards = actualPlayers.map(p => ({
+        ...p.playedCard,
+        isMine: p.name === myName,
+        owner: p.name,
+        id: p.playedCard.id + '_' + p.name 
+    }));
+    setPlayedCards(tableCards.sort(() => 0.5 - Math.random()));
     setPhase('VOTING');
-    setTimeLeft(10); 
-    
+    setTimeLeft(10);
     Animated.sequence([
       Animated.timing(announcementAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
       Animated.delay(1200),
       Animated.timing(announcementAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
     ]).start();
-
-    let finalCard = stagedCard;
-    let currentHand = [...myHand];
-    
-    if (!finalCard && currentHand.length > 0) {
-        finalCard = currentHand[0];
-        currentHand.shift();
-        setMyHand(currentHand);
-        setHasPlayed(true);
-    }
-    
-    const opponentsForCards = players.filter(p => p.name !== myName);
-    const opponentsCards = [...OFFICIAL_MEMES]
-      .filter(c => c.id !== (finalCard?.id || -1)) 
-      .sort(() => 0.5 - Math.random())
-      .slice(0, opponentsForCards.length > 0 ? opponentsForCards.length : 1) 
-      .map((c, index) => ({ 
-        ...c, 
-        isMine: false, 
-        id: c.id + '_opp', 
-        owner: opponentsForCards[index] ? opponentsForCards[index].name : 'Bekleniyor...' // Bot yerine Bekleniyor yazısı
-      }));
-      
-    // 🎯 BURASI ÖNEMLİ: Eğer elimiz boşsa null olan kartın React'i bozmaması için Fallback ID atadık.
-    const tableCards = [{ ...finalCard, isMine: true, owner: myName, id: finalCard?.id || `fallback_${Math.random()}` }, ...opponentsCards];
-    setPlayedCards(tableCards.sort(() => 0.5 - Math.random()));
   };
 
-  const handlePlayCard = () => {
-    if (selectedCard) {
-      const cardToPlay = myHand.find(c => c.id === selectedCard);
-      setStagedCard(cardToPlay); 
-      setMyHand(myHand.filter(c => c.id !== selectedCard)); 
-      setSelectedCard(null);
-      setHasPlayed(true); 
-      setIsTimeFrozen(false); 
-    }
-  };
-
-  const handleVote = async (cardId) => {
-    if (votedCardId || roundEnded || phase !== 'VOTING') return; 
+  const handleVote = (cardId) => {
+    if (stateRefs.current.votedCardId || phase !== 'VOTING') return; 
     setVotedCardId(cardId);
-    
-    setTimeout(async () => {
-      const winnerCard = playedCards[Math.floor(Math.random() * playedCards.length)];
-      const currentWinner = winnerCard.owner;
-      
-      setWinnerName(currentWinner);
-      
-      let pointsEarned = 1;
-      const isMeWinner = currentWinner === myName;
+    if (me?.id) {
+        update(ref(database, `rooms/${roomId}/players/${me.id}`), { votedFor: cardId });
+    }
+  };
 
-      if (isMeWinner && isDoublePoints) {
-        pointsEarned = 2; 
-      }
+ const calculateResults = () => {
+    setPhase('ROUND_ENDED');
+    const voteCounts = {};
+    players.forEach(p => {
+        if (p.votedFor) { voteCounts[p.votedFor] = (voteCounts[p.votedFor] || 0) + 1; }
+    });
 
-      setScores(prev => ({ 
-        ...prev, 
-        [currentWinner]: (prev[currentWinner] || 0) + pointsEarned 
-      }));
-      
-      setRoundEnded(true);
-
-      if (isMeWinner) {
-        const user = auth.currentUser;
-        if (user) {
-          try {
-            const userRef = doc(db, 'users', user.uid);
-            await updateDoc(userRef, { wonHearts: increment(1) });
-          } catch (error) {
-            console.error("Kalp güncellenemedi:", error);
-          }
+    const roundPoints = {};
+    stateRefs.current.playedCards.forEach(card => {
+        const votes = voteCounts[card.id] || 0;
+        if (votes > 0) {
+            roundPoints[card.owner] = (roundPoints[card.owner] || 0) + votes;
         }
-      }
+    });
 
-      Animated.spring(announcementAnim, { toValue: 1, useNativeDriver: true }).start();
-      if (myHand.length > 0) {
-        setTimeout(() => startNextRound(), 3500);
+    setScores(prev => {
+        const newScores = { ...prev };
+        Object.keys(roundPoints).forEach(owner => {
+            newScores[owner] = (newScores[owner] || 0) + roundPoints[owner];
+        });
+        return newScores;
+    });
+
+    let maxVotes = 0;
+    let winners = [];
+    Object.keys(roundPoints).forEach(owner => {
+        if (roundPoints[owner] > maxVotes) {
+            maxVotes = roundPoints[owner];
+            winners = [owner];
+        } else if (roundPoints[owner] === maxVotes && maxVotes > 0) {
+            winners.push(owner);
+        }
+    });
+
+    let bannerText = "KİMSE OY ALAMADI!";
+    let isMeWinner = false;
+
+    if (winners.length === 1) {
+        if (winners[0] === myName) {
+            bannerText = "KAZANAN SENSİN! 🏆";
+            isMeWinner = true;
+        } else {
+            bannerText = `${winners[0].toUpperCase()} KAZANDI!`;
+        }
+    } else if (winners.length > 1) {
+        if (winners.includes(myName)) {
+            bannerText = "BERABERE! SEN DE KAZANDIN! 🏆";
+            isMeWinner = true;
+        } else {
+            bannerText = `BERABERE: ${winners.join(', ').toUpperCase()}`;
+        }
+    }
+
+    setWinnerName(bannerText);
+
+   if (isMeWinner) {
+      const user = auth.currentUser;
+      if (user) { 
+        const userRef = doc(db, 'users', user.uid);
+        updateDoc(userRef, { 
+          wonHearts: increment(1),      
+          coins: increment(100),       
+          diamonds: increment(1),      
+          isBoxOpened: false           
+        }).catch(e => console.log("Veri güncellenirken hata:", e)); 
       }
-    }, 1500);
+    }
+
+    setRoundEnded(true);
+
+    Animated.spring(announcementAnim, { toValue: 1, useNativeDriver: true }).start();
+
+    if (stateRefs.current.myHand.length > 0) {
+      setTimeout(() => {
+        if (amIHost) {
+          handleHostNewRound();
+        }
+      }, 4000);
+    }
+  };
+
+  const handleHostNewRound = () => {
+    if (amIHost && roomId) {
+      const nextRound = currentRoundRef.current + 1;
+      const randomPrompt = SITUATION_PROMPTS[Math.floor(Math.random() * SITUATION_PROMPTS.length)];
+      
+      update(ref(database, `rooms/${roomId}`), { 
+        round: nextRound,
+        currentPrompt: randomPrompt 
+      });
+    }
   };
 
   const startNextRound = () => {
-    if (myHand.length === 0) {
-      const shuffle = [...OFFICIAL_MEMES].sort(() => 0.5 - Math.random());
-      setMyHand(shuffle.slice(0, 5));
+    if (me?.id) { update(ref(database, `rooms/${roomId}/players/${me.id}`), { playedCard: null, votedFor: null }); }
+    
+    if (stateRefs.current.myHand.length === 0) {
+      setScores(prevScores => {
+        const resetScores = {};
+        Object.keys(prevScores).forEach(name => {
+          resetScores[name] = 0;
+        });
+        return resetScores;
+      });
+
+      const sortedPlayers = [...players].sort((a, b) => a.name.localeCompare(b.name));
+      const myIdx = sortedPlayers.findIndex(p => p.name === myName);
+      const safeIdx = myIdx !== -1 ? myIdx : 0;
+      
+      const seed = hashStr(roomId || 'default') + currentRoundRef.current;
+      const rand = mulberry32(seed);
+      const sharedDeck = [...OFFICIAL_MEMES].sort(() => rand() - 0.5);
+      
+      const startIdx = (safeIdx * 5) % Math.max(1, sharedDeck.length - 5);
+      setMyHand(sharedDeck.slice(startIdx, startIdx + 5));
     }
+    
     setHasPlayed(false);
     setStagedCard(null);
     setPlayedCards([]);
     setVotedCardId(null);
     setRoundEnded(false);
     setWinnerName("");
-    setIsDoublePoints(false); 
     setPhase('READING');
     setTimeLeft(5);
-
-    announcementAnim.setValue(0); 
-    popAnim.setValue(0);
-    flipAnim.setValue(0);
-    
+    announcementAnim.setValue(0); popAnim.setValue(0); flipAnim.setValue(0);
     Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
   };
 
   const PlayerSlot = ({ name, positionStyle, avatarAnimal, badgeColor }) => (
     <View style={[styles.playerSlot, positionStyle]}>
       <View style={styles.avatarContainer}>
-        {/* Eğer oyuncu boş ise (Bekleniyor) standart ikon göster */}
         {name.includes('Bekleniyor') ? (
             <View style={[styles.avatar, { borderColor: badgeColor, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center' }]}>
                 <Ionicons name="person-outline" size={30} color="#9CA3AF" />
             </View>
         ) : (
-            <Image 
-              source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${avatarAnimal}&backgroundColor=ffffff` }} 
-              style={[styles.avatar, { borderColor: badgeColor, backgroundColor: '#FFF' }]} 
-            />
+            <Image source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${avatarAnimal}&backgroundColor=ffffff` }} style={[styles.avatar, { borderColor: badgeColor, backgroundColor: '#FFF' }]} />
         )}
-
-        <View style={[styles.nameBadge, { backgroundColor: badgeColor }]}>
-          <Text style={styles.playerName}>{name}</Text>
-        </View>
+        <View style={[styles.nameBadge, { backgroundColor: badgeColor }]}><Text style={styles.playerName}>{name}</Text></View>
       </View>
     </View>
   );
@@ -331,113 +493,99 @@ export default function RoomScreen({ navigation, route }) {
   const cardScale = flipAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }); 
   const cardRotate = flipAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }); 
 
-  const logoSwapHand = require('../../assets/joker1.png');
-  const logoSwapCard = require('../../assets/joker2.png');
-  const logoTimeFreeze = require('../../assets/joker3.png');
-  const logoDoublePoints = require('../../assets/joker4.png');
-
-  // 🚀 DİNAMİK MASAYA OTURTMA (Gerçek Kişiler + Boş Koltuklar)
-  const me = players.find(p => p.name === myName);
   let opponents = players.filter(p => p.name !== myName);
-
-  // Masada boş kalan yerleri doldur (Bot değil, Boş Koltuk)
   while (opponents.length < 3) {
-    const emptyIndex = opponents.length;
-    opponents.push({
-      id: `empty_${emptyIndex}`,
-      name: 'Bekleniyor...',
-      avatar: 'empty' // Avatar göstermemesi için
-    });
+    opponents.push({ id: `empty_${opponents.length}`, name: 'Bekleniyor...', avatar: 'empty' });
   }
 
   const opponentPositions = [styles.topPlayer, styles.leftPlayer, styles.rightPlayer];
-  const opponentColors = ["#E5E7EB", "#E5E7EB", "#E5E7EB"]; // Boş koltuklar için gri renk
+  const opponentColors = ["#E5E7EB", "#E5E7EB", "#E5E7EB"];
 
   return (
     <View style={styles.container}>
       <StatusBar hidden />
       <View style={styles.whiteBackground} />
 
-      {/* 🔮 SOL KENAR SABİT JOKER HUD */}
-      <View style={styles.hudWrapper}>
-        <View style={styles.hudContainer}>
-          <Ionicons name="flash" size={20} color="#FF00D6" style={styles.hudTitleIcon} />
-          {[
-            { id: 'joker1', logo: logoSwapHand, color: '#FF69EB' },
-            { id: 'joker2', logo: logoSwapCard, color: '#FF8A00' },
-            { id: 'joker3', logo: logoTimeFreeze, color: '#00E5FF' },
-            { id: 'joker4', logo: logoDoublePoints, color: '#FFDC5E' }
-          ].map((joker, index) => { // 🎯 Düzeltme eklendi
-            const currentCount = jokerInventory[joker.id];
-            const isDepleted = currentCount <= 0;
-            return (
-              <View key={joker.id || index} style={styles.jokerIconWrapper}> 
-                <TouchableOpacity 
-                  activeOpacity={0.7} disabled={isDepleted} onPress={() => handleUseJoker(joker.id)} 
-                  style={[styles.jokerButton, { shadowColor: joker.color, opacity: isDepleted ? 0.5 : 1 }]}
-                >
-                  <Image source={joker.logo} style={styles.jokerLogo} resizeMode="contain" />
-                  {!isDepleted && (
-                    <View style={[styles.jokerBadge, { backgroundColor: joker.color }]}>
-                      <Text style={styles.jokerBadgeText}>{currentCount}</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </View>
+     <View style={styles.hudWrapper}>
+  <View style={styles.hudContainer}>
+    
+    <TouchableOpacity 
+      activeOpacity={0.7} 
+      onPress={() => setIsJokerMenuVisible(!isJokerMenuVisible)}
+      style={{ marginBottom: isJokerMenuVisible ? 10 : 0 }} 
+    >
+       <Ionicons 
+         name={isJokerMenuVisible ? "close-circle" : "flash"} 
+         size={24} 
+         color="#FF00D6" 
+         style={styles.hudTitleIcon} 
+       />
+    </TouchableOpacity>
+
+    {/* 🚀 DÜZELTME 4: JSX İçerisindeki Joker ID'leri Güncellendi */}
+    {isJokerMenuVisible && (
+      <View style={{ alignItems: 'center' }}>
+        {[
+          { id: 'joker_skip', logo: require('../../assets/joker1.png'), color: '#FF69EB' },
+          { id: 'joker_double', logo: require('../../assets/joker2.png'), color: '#FF8A00' },
+          { id: 'joker_freeze', logo: require('../../assets/joker3.png'), color: '#00E5FF' }
+        ].map((joker, index) => { 
+          const currentCount = jokerInventory[joker.id] || 0; 
+          const isDepleted = currentCount <= 0;
+          return (
+            <View key={joker.id || index} style={[styles.jokerIconWrapper, { marginVertical: 5 }]}> 
+              <TouchableOpacity 
+                activeOpacity={0.7} 
+                disabled={isDepleted} 
+                onPress={() => {
+                  handleUseJoker(joker.id);
+                }} 
+                style={[styles.jokerButton, { shadowColor: joker.color, opacity: isDepleted ? 0.3 : 1 }]}
+              >
+                <Image source={joker.logo} style={styles.jokerLogo} resizeMode="contain" />
+                {!isDepleted && (
+                  <View style={[styles.jokerBadge, { backgroundColor: joker.color }]}>
+                    <Text style={styles.jokerBadgeText}>{currentCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          );
+        })}
       </View>
+    )}
+  </View>
+</View>
       
-      {/* 📢 DUYURU BANNER'I */}
       <Animated.View pointerEvents="none" style={[styles.announcementBanner, { transform: [{ translateX: announcementAnim.interpolate({ inputRange: [0, 1], outputRange: [-width, 0] }) }] }]}>
-        <LinearGradient
-          colors={['transparent', roundEnded ? 'rgba(255, 180, 130, 0.95)' : 'rgba(255, 105, 235, 0.95)', 'transparent']}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.bannerGradient}
-        >
-          <Text style={[styles.announcementText, roundEnded && styles.announcementTextWinner]}>
-            {roundEnded 
-              ? (winnerName === myName ? "KAZANAN SENSİN! 🏆" : `${winnerName.toUpperCase()} KAZANDI!`) 
-              : "EN İYİ MEME'İ SEÇ!"}
+        <LinearGradient colors={['transparent', roundEnded ? 'rgba(255, 180, 130, 0.95)' : 'rgba(255, 105, 235, 0.95)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.bannerGradient}>
+          <Text 
+            style={[styles.announcementText, roundEnded && styles.announcementTextWinner]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {roundEnded ? winnerName : "EN İYİ MEME'İ SEÇ!"}
           </Text>
         </LinearGradient>
       </Animated.View>
 
-      {/* 🟢 OYUN MASASI */}
       <View style={styles.tableContainer}>
         <View style={styles.mainTableRim}>
-          <View style={styles.tableSurface}>
-            <Image source={require('../../assets/roomTableLogo.png')} style={styles.roomTableLogo} />
-          </View>
+          <View style={styles.tableSurface}><Image source={require('../../assets/roomTableLogo.png')} style={styles.roomTableLogo} /></View>
 
-          {/* 🚀 SENİN YERİN (Sürekli altta) */}
-          <PlayerSlot 
-            name={`${myName}: ${scores[myName] || 0}`} 
-            positionStyle={styles.bottomPlayer} 
-            avatarAnimal={myAvatarSeed} 
-            badgeColor="#FCA9D7" 
-          />
+          <PlayerSlot name={`${myName}: ${scores[myName] || 0}`} positionStyle={styles.bottomPlayer} avatarAnimal={myAvatarSeed} badgeColor="#FCA9D7" />
 
-          {/* 🚀 RAKİPLERİN YERLERİ (Gerçek Kişi veya Boş Koltuk) */}
-          {opponents.map((opp, idx) => {
-              // Eğer oyuncu gerçekse ona renk ver, değilse gri kalır
-              const displayColor = opp.name === 'Bekleniyor...' ? opponentColors[idx % 3] : ["#FDE58E", "#FBB0B2", "#FEC994"][idx % 3];
-              
-              return (
-                  <PlayerSlot 
-                    key={opp.id || idx} 
-                    name={opp.name === 'Bekleniyor...' ? opp.name : `${opp.name}: ${scores[opp.name] || 0}`} 
-                    positionStyle={opponentPositions[idx % 3]} 
-                    avatarAnimal={opp.avatar} 
-                    badgeColor={displayColor} 
-                  />
-              );
-          })}
+          {opponents.map((opp, idx) => (
+              <PlayerSlot 
+                key={opp.id || idx} 
+                name={opp.name === 'Bekleniyor...' ? opp.name : `${opp.name}: ${scores[opp.name] || 0}`} 
+                positionStyle={opponentPositions[idx % 3]} 
+                avatarAnimal={opp.avatar} 
+                badgeColor={opp.name === 'Bekleniyor...' ? opponentColors[idx % 3] : ["#FDE58E", "#FBB0B2", "#FEC994"][idx % 3]} 
+              />
+          ))}
 
-          {/* MERKEZ ALAN */}
           <View style={styles.centerArea}>
-            
-            {/* READING FAZI */}
             {phase === 'READING' && (
               <Animated.View style={[styles.situationCardWrapper, { transform: [{ scale: popAnim }, { scale: cardScale }, { rotateY: cardRotate }] }]}>
                 <View style={styles.premiumSituationCard}>
@@ -452,41 +600,37 @@ export default function RoomScreen({ navigation, route }) {
                       </View>
                     </View>
                     <View style={styles.premiumDivider} />
-                    <Text style={styles.premiumText}>Vize haftası varken ben ve bitmeyen uykum...</Text>
+                    <Text style={styles.premiumText}>{currentPrompt}</Text>
                   </View>
                 </View>
               </Animated.View>
             )}
 
-            {/* PLAYING FAZI */}
-            {phase === 'PLAYING' && (
+            {(phase === 'PLAYING' || phase === 'WAITING_CARDS') && (
               <View style={styles.proTimerContainer}>
                 <View style={[styles.staticRing, isTimeFrozen && styles.staticRingFrozen]} />
                 <Animated.View style={[
                   styles.timerRing, 
-                  isTimeFrozen ? styles.timerRingFrozen : (timeLeft <= 3 ? styles.timerRingDanger : styles.timerRingNormal),
+                  isTimeFrozen ? styles.timerRingFrozen : (timeLeft <= 3 && phase !== 'WAITING_CARDS' ? styles.timerRingDanger : styles.timerRingNormal),
                   { transform: [{ rotate: rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }
                 ]} />
                 {isTimeFrozen && (
                   <View style={styles.snowOverlay} pointerEvents="none">
                      <Snowflake delay={0} left="25%" size={14} />
                      <Snowflake delay={600} left="55%" size={10} />
-                     <Snowflake delay={1200} left="35%" size={16} />
-                     <Snowflake delay={1800} left="65%" size={12} />
                   </View>
                 )}
                 <View style={[styles.modernTimerContent, isTimeFrozen && styles.modernTimerContentFrozen]}>
                    <Text style={[
                      styles.proTimerText, 
-                     timeLeft <= 3 && !isTimeFrozen && styles.proTimerTextDanger,
+                     timeLeft <= 3 && !isTimeFrozen && phase !== 'WAITING_CARDS' && styles.proTimerTextDanger,
                      isTimeFrozen && styles.proTimerTextFrozen
-                   ]}>{timeLeft}</Text>
+                   ]}>{phase === 'WAITING_CARDS' ? '...' : timeLeft}</Text>
                 </View>
               </View>
             )}
 
-            {/* VOTING FAZI */}
-            {phase === 'VOTING' && playedCards.length > 0 && (
+            {(phase === 'VOTING' || phase === 'WAITING_VOTES' || phase === 'ROUND_ENDED') && playedCards.length > 0 && (
               <View style={styles.votingAreaPro}>
                 {!roundEnded && (
                   <View style={styles.proProgressBarContainer}>
@@ -499,15 +643,14 @@ export default function RoomScreen({ navigation, route }) {
                     ]} />
                   </View>
                 )}
-
                 <View style={styles.votingRowPro}>
-                  {playedCards.map((card, index) => { // 🎯 Düzeltme eklendi
+                  {playedCards.map((card, index) => { 
                     const isVoted = votedCardId === card.id;
                     return (
                       <TouchableOpacity 
-                        key={card.id || `played_${index}`} // 🎯 ID bozulursa diye yedek kilit
+                        key={card.id || `played_${index}`} 
                         style={[styles.voteCardWrapper, isVoted && styles.votedCardStyle, card.isMine && styles.disabledVoteCard]} 
-                        disabled={card.isMine || votedCardId !== null} onPress={() => handleVote(card.id)} activeOpacity={0.8}
+                        disabled={card.isMine || votedCardId !== null || phase === 'WAITING_VOTES' || phase === 'ROUND_ENDED'} onPress={() => handleVote(card.id)} activeOpacity={0.8}
                       >
                         <Image source={{ uri: card.url }} style={styles.memeImage} />
                         {card.isMine && (
@@ -525,69 +668,33 @@ export default function RoomScreen({ navigation, route }) {
                     );
                   })}
                 </View>
-
-                {/* SONUÇ EKRANI */}
-                {roundEnded && myHand.length === 0 && (
-                  <View style={styles.proModalOverlay}>
-                    <Animated.View style={[styles.resultWindow, { transform: [{ scale: popAnim }] }]}>
-                      <LinearGradient colors={['#FF69EB', '#FF00D6']} style={styles.windowHeader}>
-                        <Text style={styles.windowHeaderText}>OYUN SONUCU</Text>
-                      </LinearGradient>
-                      <View style={styles.windowBody}>
-                        <View style={styles.scoreListContainer}>
-                          {Object.entries(scores)
-                            .sort((a, b) => b[1] - a[1]) 
-                            .map(([name, score], index) => ( // 🎯 Düzeltme eklendi
-                              <View key={name || `score_${index}`} style={[styles.scoreRowPro, index === 0 && styles.winnerRow]}>
-                                <Text style={styles.rankText}>{index + 1}.</Text>
-                                <Text style={styles.scoreNameText}>{name === myName ? 'SEN' : name}</Text>
-                                <Text style={styles.scoreValueText}>{score} PK</Text>
-                              </View>
-                            ))}
-                        </View>
-                        <View style={styles.windowActions}>
-                          <TouchableOpacity style={styles.modalExitBtn} onPress={() => navigation.navigate('Home')} activeOpacity={0.8}>
-                            <Text style={styles.modalExitText}>OYUNDAN ÇIK</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={styles.modalPlayBtn} onPress={startNextRound} activeOpacity={0.8}>
-                            <Text style={styles.modalPlayText}>YENİ OYUN</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </Animated.View>
-                  </View>
-                )}
               </View>
             )}
           </View>
         </View>
       </View>
 
-      {/* 🚀 ALT AKSİYON MERKEZİ */}
       <View style={styles.bottomDeckWrapper}>
-        {!hasPlayed && phase !== 'VOTING' && (
+        {!hasPlayed && (phase === 'READING' || phase === 'PLAYING') && (
           <View style={[styles.handContainer, { width: width }]}>
-            {myHand.map((item, index) => { // 🎯 Düzeltme eklendi
+            {myHand.map((item, index) => { 
               const rotation = (index - Math.floor(myHand.length / 2)) * 10; 
               const isSelected = selectedCard === item.id;
-              
               return (
                 <TouchableOpacity 
-                  key={item.id || `hand_${index}`} // 🎯 Yedek kilit eklendi
+                  key={item.id || `hand_${index}`} 
                   activeOpacity={1} onPress={() => setSelectedCard(isSelected ? null : item.id)} 
                   style={[
                     styles.deckCard, 
-                    { 
-                      transform: [{ rotate: `${rotation}deg` }, { translateY: isSelected ? -30 : 0 }, { scale: isSelected ? 1.1 : 1 }], 
+                    { transform: [{ rotate: `${rotation}deg` }, { translateY: isSelected ? -30 : 0 }, { scale: isSelected ? 1.1 : 1 }], 
                       zIndex: isSelected ? 100 : index, 
-                      left: (width / 2) - 55 + (index - Math.floor(myHand.length / 2)) * 50 
-                    }
+                      left: (width / 2) - 55 + (index - Math.floor(myHand.length / 2)) * 50 }
                   ]}
                 >
                   <Image source={{ uri: item.url }} style={styles.memeImage} />
                   {isSelected && <View style={styles.selectedBorder} />}
                   {isSelected && (
-                    <TouchableOpacity style={styles.playButton} onPress={handlePlayCard} activeOpacity={0.8}>
+                    <TouchableOpacity style={styles.playButton} onPress={() => handlePlayCard()} activeOpacity={0.8}>
                       <LinearGradient colors={['#FF69EB', '#FF00D6']} style={styles.playButtonGradient}>
                         <Text style={styles.playButtonText}>AT</Text>
                       </LinearGradient>
@@ -600,10 +707,15 @@ export default function RoomScreen({ navigation, route }) {
         )}
       </View>
 
-      {/* SCORE SCREEN (Bitiş) */}
+      {/* TÜM EL BİTTİĞİNDE (5. TUR SONU) BÜYÜK SKOR EKRANI */}
       {roundEnded && myHand.length === 0 && (
-        <ScoreScreen scores={scores} navigation={navigation} onNewGame={startNextRound} />
+        <ScoreScreen 
+          scores={scores} 
+          navigation={navigation} 
+          onNewGame={amIHost ? handleHostNewRound : () => {}} 
+        />
       )}
+      <DisconnectModal visible={!isConnected} />
     </View>
   );
 }

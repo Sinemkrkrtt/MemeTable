@@ -30,9 +30,7 @@ export default function AuthScreen() {
   
   // 🚀 EKLENDİ: Yüklenme durumu state'i
   const [loading, setLoading] = useState(false);
-
   const handleAuth = async () => {
-    // 🚀 EKLENDİ: E-postanın sonundaki kazara eklenen boşlukları temizler
     const cleanEmail = email.trim();
 
     if (!cleanEmail || !password || (!isLogin && !nickname)) {
@@ -40,13 +38,12 @@ export default function AuthScreen() {
       return;
     }
 
-    // 🚀 EKLENDİ: Firebase 6 karakterden kısa şifre kabul etmez, baştan uyaralım
     if (password.length < 6) {
       Alert.alert("Kısa Şifre", "Şifren en az 6 karakter olmalı.");
       return;
     }
 
-    setLoading(true); // İşlem başladı, butonu kilitle ve döndür
+    setLoading(true);
 
     try {
       if (isLogin) {
@@ -55,28 +52,38 @@ export default function AuthScreen() {
         const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
         const user = userCredential.user;
         
-        // İsmi (Meme Kralı vb.) Firebase Auth'a kaydet
         await updateProfile(user, { displayName: nickname });
         
-        // Ekstra verileri Firestore Veritabanına yaz
+        // 🚀 DATABASE YAPILANDIRMASI: Kayıt anında tüm alanları açıyoruz
         await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           nickname: nickname,
           email: cleanEmail,
           createdAt: new Date(),
-          score: 0
+          
+          // 💰 PARA BİRİMLERİ (Başlangıç hediyesi olarak eklenebilir)
+          coins: 100,     // Başlangıç parası
+          diamonds: 10,    // Başlangıç elması
+          
+          // 🃏 JOKERLER (3 ayrı joker alanı)
+          joker_skip: 1,    // Pas geçme hakkı
+          joker_double: 1,  // İki katı puan hakkı
+          joker_freeze: 1,  // Zaman dondurma hakkı
+          
+          // GENEL İSTATİSTİKLER
+          wonHearts: 0,
+          isBoxOpened: false,
+          level: 1,
+          experience: 0
         });
       }
     } catch (error) {
-      // Sık karşılaşılan Firebase hatalarını Türkçeleştirme (Opsiyonel ama hoş olur)
       let errorMsg = error.message;
-      if (error.code === 'auth/invalid-email') errorMsg = "Geçersiz bir e-posta adresi girdin.";
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') errorMsg = "E-posta veya şifre hatalı.";
-      if (error.code === 'auth/email-already-in-use') errorMsg = "Bu e-posta adresi zaten kullanımda.";
-
+      if (error.code === 'auth/invalid-email') errorMsg = "Geçersiz bir e-posta adresi.";
+      if (error.code === 'auth/email-already-in-use') errorMsg = "Bu e-posta zaten kullanımda.";
       Alert.alert("Hata", errorMsg);
     } finally {
-      setLoading(false); // İşlem bitti (başarılı veya hatalı), butonu normale döndür
+      setLoading(false);
     }
   };
 
