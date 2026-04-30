@@ -1,39 +1,38 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
-const { width, height } = Dimensions.get('window');
-
 const ScoreScreen = ({ scores, navigation, onNewGame }) => {
-  // Puanları büyükten küçüğe sırala
-  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  // 🚀 DÜZELTME: Ekran genişliğini içeri aldık. Böylece ekran yatay (landscape)
+  // olduğunda eski dikey ölçüde takılı kalmayıp yatay genişliği alacak!
+  const { width } = useWindowDimensions(); 
+
+  const sorted = Object.entries(scores)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4);
 
   return (
     <View style={styles.overlay}>
-      {/* 🌅 Arka Plan: Transparan Candy Sunset Gradient (Masa artık görünüyor) */}
       <LinearGradient 
         colors={['rgba(255, 105, 235, 0.7)', 'rgba(255, 191, 129, 0.7)', 'rgba(255, 220, 94, 0.7)']} 
         style={StyleSheet.absoluteFill} 
       />
       
-      {/* Dekoratif Işık Yansımaları */}
-      <View style={styles.topGlow} />
+      {/* 🚀 DÜZELTME: Genişliği dinamik olarak buraya verdik */}
+      <View style={[styles.topGlow, { width: width }]} />
       
       <View style={styles.modalWindow}>
-        {/* ❌ SAĞ ÜST KAPATMA BUTONU */}
         <TouchableOpacity 
           style={styles.closeButton} 
-          onPress={() => navigation.navigate('Home')}
+          onPress={() => navigation.replace('Home')}
           activeOpacity={0.7}
         >
           <Ionicons name="close" size={30} color="#FF69EB" />
         </TouchableOpacity>
 
-        {/* Cam Parlaması */}
         <View style={styles.glassReflect} />
 
-        {/* 🔥 ÜST DÜZEY BAŞLIK TASARIMI */}
         <View style={styles.headerContainer}>
           <View style={styles.statusBadge}>
             <Ionicons name="flash" size={12} color="#FFDC5E" />
@@ -41,19 +40,16 @@ const ScoreScreen = ({ scores, navigation, onNewGame }) => {
           </View>
           
           <View style={styles.titleArea}>
-            {/* Soft Işıma (Glow) Arka Planı */}
             <Text style={styles.headerTitleGlow}>FİNAL SKORU</Text>
             <Text style={styles.headerTitle}>FİNAL SKORU</Text>
           </View>
         </View>
 
-        {/* 🏟️ KÜRSÜ (PODIUM) - Yeni Nesil Tasarım */}
         <View style={styles.podiumContainer}>
           {sorted.map(([name, score], index) => {
             const isFirst = index === 0;
             const isMe = name === 'Ben';
             
-            // Renk Paleti Eşleşmesi: Sarı -> Pembe -> Somon -> Şeftali
             const rankColors = ['#FFDC5E', '#FF69EB', '#FFA3A5', '#FFBF81'];
             const heightMap = ['100%', '86%', '76%', '68%'];
 
@@ -67,6 +63,12 @@ const ScoreScreen = ({ scores, navigation, onNewGame }) => {
                   (!isFirst && isMe) && styles.myCard
                 ]}
               >
+                <LinearGradient 
+                  colors={['rgba(255,255,255,0.8)', 'rgba(255,255,255,0.3)']} 
+                  style={StyleSheet.absoluteFill} 
+                  borderRadius={24}
+                />
+
                 {isFirst && <Text style={styles.crown}>👑</Text>}
                 
                 <View style={[styles.rankBadge, { backgroundColor: rankColors[index] }]}>
@@ -74,7 +76,11 @@ const ScoreScreen = ({ scores, navigation, onNewGame }) => {
                 </View>
                 
                 <View style={styles.playerInfo}>
-                  <Text style={[styles.playerName, isFirst && styles.winnerText, isMe && styles.meTextBold]} numberOfLines={1}>
+                  <Text 
+                    style={[styles.playerName, isFirst && styles.winnerText, isMe && styles.meTextBold]} 
+                    numberOfLines={1} 
+                    adjustsFontSizeToFit
+                  >
                      {isMe ? 'SEN' : name.toUpperCase()}
                   </Text>
                   
@@ -84,18 +90,11 @@ const ScoreScreen = ({ scores, navigation, onNewGame }) => {
                     </Text>
                   </View>
                 </View>
-
-                <LinearGradient 
-                  colors={['rgba(255,255,255,0.8)', 'rgba(255,255,255,0.3)']} 
-                  style={StyleSheet.absoluteFill} 
-                  borderRadius={24}
-                />
               </View>
             );
           })}
         </View>
 
-        {/* 🎮 MERKEZLENMİŞ AKSİYON BUTONU */}
         <View style={styles.actionRow}>
           <TouchableOpacity style={styles.playBtnContainer} onPress={onNewGame} activeOpacity={0.9}>
             <View style={styles.btnAura} />
@@ -106,8 +105,9 @@ const ScoreScreen = ({ scores, navigation, onNewGame }) => {
             >
               <View style={styles.innerReflect} />
               <Text style={styles.playBtnText}>YENİDEN OYNA</Text>
-              <View style={styles.btnIconCircle}>
-              </View>
+              
+          
+
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -125,12 +125,12 @@ const styles = StyleSheet.create({
     zIndex: 999999,
   },
   topGlow: {
-    position: 'absolute', top: -100, width: width, height: 300,
+    position: 'absolute', top: -100, height: 300,
     backgroundColor: '#FFF', opacity: 0.2, borderRadius: 150, transform: [{ scaleX: 2 }],
   },
   modalWindow: {
-    width: '70%',
-    height: '88%',
+    width: '75%', 
+    height: '92%',
     backgroundColor: 'rgba(255, 255, 255, 0.90)',
     borderRadius: 40,
     padding: 25,
@@ -167,11 +167,11 @@ const styles = StyleSheet.create({
   titleArea: { justifyContent: 'center', alignItems: 'center' },
   headerTitleGlow: {
     position: 'absolute', color: '#FF69EB', fontSize: 36, fontWeight: '900',
-    letterSpacing: 2, opacity: 0.3,
+    letterSpacing: 2, opacity: 0.3,marginBottom:5
   },
   headerTitle: { 
     color: '#FF86C8', fontSize: 36, fontWeight: '900', 
-    letterSpacing: 2, fontFamily: 'Nunito_900Black' 
+    letterSpacing: 2, fontFamily: 'Nunito_900Black' ,marginBottom:5
   },
   podiumContainer: { 
     flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', 
@@ -198,7 +198,6 @@ const styles = StyleSheet.create({
   },
   rankText: { fontSize: 14, fontWeight: '900', color: '#FFF' },
   crown: { position: 'absolute', top: -35, fontSize: 36, zIndex: 20 },
-
   actionRow: { 
     width: '100%', 
     justifyContent: 'center', 

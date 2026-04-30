@@ -3,11 +3,10 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Dimensions, Keyboa
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av'; // 🔥 SES KÜTÜPHANESİ EKLENDİ
-
-// 🚀 DÜZELTME: Firebase Firestore'dan getDoc ve db eklendi!
+import { Audio } from 'expo-av'; 
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
+import { useIsFocused } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
@@ -33,11 +32,12 @@ const playSound = async (type) => {
 };
 
 export default function JoinRoom({ navigation, route }) {
+  const isFocused = useIsFocused();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [manualCode, setManualCode] = useState('');
 
-  const handleJoinRoom = async (rawData) => {
+const handleJoinRoom = async (rawData) => {
     if (!rawData || rawData.trim().length === 0 || scanned) return;
     
     setScanned(true); 
@@ -51,46 +51,30 @@ export default function JoinRoom({ navigation, route }) {
     const cleanCode = code.toUpperCase().trim();
 
     if (cleanCode.includes('.') || cleanCode.includes(':')) {
-      playSound('error'); // 🔊 HATA SESİ
+      playSound('error');
       alert("Geçersiz QR! Lütfen sadece oyun içi oda kodunu okutun.");
       setTimeout(() => setScanned(false), 2000); 
       return; 
     }
 
-    playSound('join'); // 🔊 BAŞARILI GİRİŞ/TARAMA SESİ
+    playSound('join');
 
+    // 🚀 DÜZELTME: Firebase'e gidip beklemeye gerek yok! 
+    // AvatarScreen'den gelen hazır ve güncel veriyi kullanıyoruz.
     const params = route.params || {};
     const selectedAvatar = params.userAvatar || params.myAvatarSeed || 'Oliver';
+    const currentUserName = params.myName || auth.currentUser?.displayName || 'Oyuncu';
 
-    // 🚀 KESİN ÇÖZÜM: İsmi sağdan soldan değil, TAM ŞU AN Firebase'den (nickname) çekiyoruz!
-    let currentUserName = 'Oyuncu'; // Varsayılan
-    const user = auth.currentUser;
-    
-    if (user) {
-      try {
-        const userRef = doc(db, 'users', user.uid);
-        const userSnap = await getDoc(userRef);
-        
-        if (userSnap.exists() && userSnap.data().nickname) {
-          currentUserName = userSnap.data().nickname; // Gerçek nicknamen geldi!
-        } else {
-          currentUserName = user.displayName || 'Oyuncu';
-        }
-      } catch (error) {
-        console.log("İsim çekilirken hata:", error);
-        currentUserName = params.myName || user.displayName || 'Oyuncu';
-      }
-    }
-
-    // Her şey yolundaysa Lobby'e git
+    // Bekleme yapmadan FİŞEK GİBİ Lobiye uçur!
     navigation.replace('LobbyScreen', { 
       roomId: cleanCode, 
       isHost: false,
-      myName: currentUserName, // 🎯 Yüzde yüz Firebase'den gelen isim!
+      myName: currentUserName, 
       userAvatar: selectedAvatar,
       myAvatarSeed: selectedAvatar
     });
 
+    // Replace kullandığımız için timeout'a gerek kalmayabilir ama güvenlik için dursun.
     setTimeout(() => setScanned(false), 1500);
   };
 
@@ -148,11 +132,13 @@ export default function JoinRoom({ navigation, route }) {
         
         <View style={styles.scannerWrapper}>
           <View style={styles.scannerOutline}>
+            {isFocused && (
             <CameraView
               style={styles.camera}
               facing="back"
-              onBarcodeScanned={scanned ? null : ({ data }) => handleJoinRoom(data)}
+              onBarcodeScanned={scanned ? undefined : ({ data }) => handleJoinRoom(data)}
             />
+          )}
             {/* 🎨 ODAK KÖŞELERİ - FFDC5E (Sarı Tonu) */}
             <View style={[styles.corner, styles.topLeft, { borderColor: '#FFDC5E' }]} />
             <View style={[styles.corner, styles.topRight, { borderColor: '#FFDC5E' }]} />

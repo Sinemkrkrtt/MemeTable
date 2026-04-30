@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Dimensions, StatusBar, Animated } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, StatusBar, Animated,Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { StackActions } from '@react-navigation/native'; 
 import { doc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
+import { Image } from 'expo-image';
 
 // 🚀 YENİ: Ses ve Titreşim
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 
 const { width } = Dimensions.get('window');
+const GRID_PADDING = 15;
+const CARD_MARGIN = 8;
+const CARD_SIZE = (width - (GRID_PADDING * 2) - (CARD_MARGIN * 6)) / 3;
 
 const AVATAR_LIST = [
   'Oliver', 'Willow', 'Felix', 'Jack', 'Luna', 'Zoe', 'Milo', 'Ash', 'Ruby',
@@ -99,9 +103,12 @@ export default function AvatarScreen({ navigation, route }) {
         }}
         activeOpacity={0.8} // Daha tok bir basım hissi
       >
-        <Image 
+       <Image 
           source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${item}&backgroundColor=ffffff` }} 
           style={[styles.avatarImage, isSelected && { transform: [{ scale: 1.15 }] }]} 
+          contentFit="cover" 
+          transition={300} 
+          cachePolicy="memory-disk" 
         />
         {isSelected && (
            <View style={styles.activeIndicatorWrapper}>
@@ -127,7 +134,7 @@ export default function AvatarScreen({ navigation, route }) {
             navigation.navigate('Home');
           }}
         >
-          <Ionicons name="chevron-back" size={24} color="#333" />
+          <Ionicons name="chevron-back" size={24} color='#FF69EB' />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Karakter Seçimi</Text>
         <View style={{ width: 44 }} /> 
@@ -135,11 +142,15 @@ export default function AvatarScreen({ navigation, route }) {
 
       <View style={styles.showcase}>
         <Animated.View style={[styles.previewRing, { transform: [{ scale: pulseAnim }] }]}>
-           <Image 
-              source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${selected}&backgroundColor=ffffff` }} 
-              style={styles.previewImage} 
-            />
-        </Animated.View>
+  <Image 
+      source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${selected}&backgroundColor=ffffff` }} 
+      style={styles.previewImage} 
+      placeholder={require('../../assets/placeholderAvatar.png')} // defaultSource yerine placeholder
+      contentFit="contain" 
+      transition={200} // Seçim değiştikçe yumuşak geçiş yapar
+      cachePolicy="memory-disk" // Önizleme için de agresif önbellekleme
+   />
+</Animated.View>
         <Text style={styles.instructionText}>Masadaki yeni tarzını belirle</Text>
       </View>
 
@@ -176,14 +187,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingHorizontal: 20,
     paddingBottom: 15,
   },
   closeBtn: {
     width: 44,
     height: 44,
-    borderRadius: 14, // Biraz daha yumuşak köşeler
+    borderRadius: 14,
     backgroundColor: '#FFF',
     justifyContent: 'center',
     alignItems: 'center',
@@ -192,31 +203,31 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2
   },
-  headerTitle: { fontSize: 20, fontFamily: 'Nunito_900Black', color: '#111827', letterSpacing: -0.5 },
+  headerTitle: { fontSize: 20, fontWeight: '900', color: '#111827', letterSpacing: -0.5 },
   showcase: { alignItems: 'center', paddingVertical: 25 },
   previewRing: {
-    width: 130, // Biraz daha büyütüldü
-    height: 130,
+    width: 140,
+    height: 140,
     borderRadius: 70,
     backgroundColor: '#FFF',
-    elevation: 25,
+    elevation: 20,
     shadowColor: '#FF00D6',
-    shadowOpacity: 0.15, // Gölge daha belirgin ama yumuşak
-    shadowRadius: 25,
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 0, 214, 0.1)' // Çerçeveye hafif pembe ton
+    borderWidth: 3,
+    borderColor: 'rgba(255, 0, 214, 0.05)'
   },
-  previewImage: { width: 130, height: 130 },
-  instructionText: { marginTop: 20, fontSize: 15, fontFamily: 'Nunito_700Bold', color: '#6B7280' },
-  listPadding: { paddingHorizontal: 15, paddingBottom: 140 },
+  previewImage: { width: 140, height: 140 },
+  instructionText: { marginTop: 20, fontSize: 15, fontWeight: '700', color: '#6B7280' },
+  listPadding: { paddingHorizontal: GRID_PADDING, paddingBottom: 140 },
   card: {
-    flex: 1,
-    aspectRatio: 1,
-    margin: 8,
+    width: CARD_SIZE,
+    height: CARD_SIZE,
+    margin: CARD_MARGIN,
     borderRadius: 24,
-    backgroundColor: '#FFF', // Gri yerine beyaz yapıp hafif gölge eklendi
+    backgroundColor: '#FFF',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -227,15 +238,14 @@ const styles = StyleSheet.create({
     elevation: 1
   },
   selectedCard: {
-    backgroundColor: '#FFF',
     borderColor: '#FF00D6',
     shadowColor: '#FF00D6',
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 8,
-    transform: [{ translateY: -2 }] // Seçili olan hafif yukarı kalkar
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+    transform: [{ translateY: -3 }]
   },
-  avatarImage: { width: '85%', height: '85%' },
+  avatarImage: { width: '75%', height: '75%' },
   activeIndicatorWrapper: {
     position: 'absolute', 
     bottom: 8,
@@ -254,18 +264,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '100%',
     paddingHorizontal: 25,
-    paddingBottom: 40,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 25,
     paddingTop: 20,
-    backgroundColor: 'rgba(255,255,255,0.8)', // Blur hissi için opacity düşürüldü
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
   premiumButton: {
     height: 64,
     borderRadius: 22,
     overflow: 'hidden',
     shadowColor: '#FF00D6',
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 12
+    shadowOpacity: 0.35,
+    shadowRadius: 15,
+    elevation: 10
   },
   buttonGradient: {
     flex: 1,
@@ -277,13 +287,13 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: '40%',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)', // Camımsı parlama
+    height: '35%',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
   buttonText: {
     color: 'white',
     fontSize: 18,
-    fontFamily: 'Nunito_900Black',
+    fontWeight: '900',
     letterSpacing: 1.2
   }
 });

@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, Image, SafeAreaView, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, FlatList, SafeAreaView, Dimensions } from 'react-native';
 import { OFFICIAL_MEMES } from '../memeData'; // Az önce oluşturduğun dosyayı çağırıyoruz
+import { Image } from 'expo-image';
 
 const { width } = Dimensions.get('window');
 
@@ -18,11 +19,14 @@ export default function MemeLibrary() {
         numColumns={2}
         renderItem={({ item }) => (
           <View style={styles.card}>
-            <Image 
-              source={{ uri: item.url }} 
-              style={styles.image} 
-              resizeMode="cover"
-            />
+           <Image 
+            source={{ uri: item.url }} 
+            style={styles.image} 
+            contentFit="cover" 
+            transition={400} // Görsel yüklenirken profesyonel bir yumuşaklıkla belirsin
+            priority="high" // Oylama ekranında en önemli şey bu kartlar, işlemci buna odaklansın
+            cachePolicy="memory-disk" // Agresif önbellekleme: Bir kere oylanan meme, diskte kalsın!
+          />
           </View>
         )}
         contentContainerStyle={styles.listContent}

@@ -14,51 +14,51 @@ export const palet = {
 
 export const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: palet.bg },
-  scrollContent: { paddingHorizontal: 25, paddingBottom: 30 },
+ scrollContent: { 
+    flexGrow: 1, // Ekran boşluğunu içeriğe yayar
+    paddingHorizontal: 25, 
+    paddingBottom: 40, // Alta biraz daha nefes payı
+    justifyContent: 'space-between' // İçerikleri ekrana orantılı dağıtır
+  },
 
   // --- PREMİUM HEADER ---
   headerRow: { 
-  flexDirection: 'row', 
-  justifyContent: 'space-between', // Bu arayı otomatik açar
-  alignItems: 'center', 
-  marginTop: 25,
-  marginBottom: -5,
-  paddingHorizontal: 20, // Kenarlardan nefes payı
-  width: '100%', // Sağa yaslanması için tam genişlik şart
-},
-sleekVault: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: 'rgba(255, 255, 255, 0.98)',
-  // 🔥 DEĞİŞİKLİK BURADA:
-  paddingLeft: 4,      // Market ikonunu sola iyice yaklaştırdık
-  paddingRight: 16,     // Sağ taraftaki elmasın bitişinde boşluk bıraktık
-  paddingVertical: 4,   // Dikeyde daha fit bir görünüm
-  borderRadius: 18,     // Biraz daha keskin ve modern
-  shadowColor: '#B832FA',
-  shadowOpacity: 0.2,
-  shadowRadius: 5,
-  elevation: 8,
-  borderWidth: 1,
-  borderColor: '#F8F8F8',
-},
-
-shopIconContainer: {
-  padding: 10,               // İkonun içindeki doluluk
-  borderRadius: 14,          // Kutu kavisini ana çerçeveyle uyumlu yaptık
-  marginRight: 12,           // Yanındaki coin ile arasını açtık
-},
-vaultValue: { 
-  fontFamily: 'Nunito_900Black', 
-  fontSize: 16, 
-  color: '#2D1F35', // Çok koyu olmayan bir mor/siyah
-  minWidth: 40,    // Rakamlar değişince kayma yapmaması için
-},
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginTop: 25,
+    marginBottom: -5,
+    paddingHorizontal: 20, 
+    width: '100%', 
+  },
+  sleekVault: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+    paddingLeft: 4,      
+    paddingRight: 16,     
+    paddingVertical: 4,   
+    borderRadius: 18,     
+    shadowColor: '#B832FA',
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#F8F8F8',
+  },
+  shopIconContainer: {
+    padding: 10,               
+    borderRadius: 14,          
+    marginRight: 12,           
+  },
   vaultItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  
+  // 🔥 DÜZELTME: İki ayrı vaultValue birleştirildi
   vaultValue: { 
     fontFamily: 'Nunito_900Black', 
-    fontSize: 15, 
-    color: '#4A1D3A',
+    fontSize: 16, 
+    color: '#2D1F35', 
+    minWidth: 40,
     letterSpacing: -0.2 
   },
   vaultSeparator: { 
@@ -77,20 +77,23 @@ vaultValue: {
     elevation: 4,
     borderWidth: 1,
     borderColor: '#F0F0F0',
-
-    transform: [{ rotate: '45deg' }],
+    transform: [{ rotate: '45deg' }], // 🔥 Premium Elmas Dokunuşu
     shadowColor: palet.peach,
     shadowOpacity: 0.8,
     shadowRadius: 6,
-    
-
   },
   logoutIcon: { transform: [{ rotate: '-45deg' }] },
 
   // --- LOGO ALANI ---
-  logoArea: { 
-    width: '100%', height: 240, marginTop: 10, marginBottom: 10, 
-    justifyContent: 'center', alignItems: 'center',
+ logoArea: { 
+    width: '100%', 
+    // Yüksekliği ekranın %28'i kadar yap. Uzun telefonda büyür, kısa telefonda küçülür!
+    height: Dimensions.get('window').height * 0.28, 
+    minHeight: 200, // Ama ne olursa olsun 200'den küçük olmasın
+    marginTop: 15, 
+    marginBottom: 15, 
+    justifyContent: 'center', 
+    alignItems: 'center',
   },
   homeLogoLarge: { width: '90%', height: '100%', borderRadius: 70 },
 

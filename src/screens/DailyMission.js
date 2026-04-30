@@ -1,11 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Modal, Animated, StyleSheet, Image, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, Animated, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { doc, updateDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
-
-// 🚀 YENİ EKLENEN KÜTÜPHANELER
+import { Image } from 'expo-image';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 
@@ -95,23 +94,25 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
     if (isClaiming) return;
     setIsClaiming(true);
     
-    // Onay titreşimi
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     const user = auth.currentUser;
     if (user) {
       const userRef = doc(db, "users", user.uid);
       try {
-       let updateData = { 
-  wonHearts: 0, 
-  isBoxOpened: false 
-};
+        let updateData = { 
+          wonHearts: 0, 
+          isBoxOpened: false 
+        };
 
+        // 🚀 DÜZELTME: Hangi joker çıktıysa onu artır!
         if (currentReward.type === 'joker') {
-        // Obje içindeki alanı güncellemek için dot notation (nokta kullanımı)
-        updateData[`joker_skip`] = increment(1); // Veritabanındaki joker alan adın neyse o (joker_skip, joker1 vb.)
-        }
-         else if (currentReward.id === 'coin') {
+          let dbField = 'joker_skip'; // Varsayılan joker1
+          if (currentReward.id === 'joker2') dbField = 'joker_double'; // Veritabanındaki isimle eşleştir
+          if (currentReward.id === 'joker3') dbField = 'joker_freeze'; // Veritabanındaki isimle eşleştir
+          
+          updateData[dbField] = increment(1);
+        } else if (currentReward.id === 'coin') {
           updateData[`coins`] = increment(500);
         } else if (currentReward.id === 'diamond') {
           updateData[`diamonds`] = increment(10);
@@ -121,6 +122,7 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
         if (onRefreshUser) onRefreshUser();
         setIsModalVisible(false);
       } catch (error) {
+        // Burada Custom Alert kullanılabilir!
         console.error("Hediye işlenirken hata:", error);
       } finally {
         setIsClaiming(false);
@@ -205,7 +207,17 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
                 <LinearGradient colors={['#FFFFFF', '#F9F9F9']} style={styles.objectInner}>
                   <LinearGradient colors={['rgba(255,255,255,0.9)', 'transparent', 'rgba(255,255,255,0.2)']} style={styles.shineOverlay} start={{x:0, y:0}} end={{x:1, y:1}} />
                   {currentReward.type === 'joker' ? (
-                    <Image source={currentReward.id === 'joker1' ? require('../../assets/joker1.png') : currentReward.id === 'joker2' ? require('../../assets/joker2.png') : require('../../assets/joker3.png')} style={styles.rewardImage} />
+                 <Image 
+                    source={
+                      currentReward.id === 'joker1' ? require('../../assets/joker1.png') : 
+                      currentReward.id === 'joker2' ? require('../../assets/joker2.png') : 
+                      require('../../assets/joker3.png')
+                    } 
+                    style={styles.rewardImage} 
+                    contentFit="contain"
+                    priority="high" 
+                    cachePolicy="memory" 
+                />
                   ) : (
                     <Ionicons name={currentReward.icon} size={100} color={currentReward.color} />
                   )}
@@ -314,7 +326,8 @@ const styles = StyleSheet.create({
   },
   auraCircle: { flex: 1, borderRadius: 140 },
   premiumObjectFrame: { 
-    width: 170, 
+   width: width * 0.4, // Sabit 170 yerine dinamik
+    aspectRatio: 0.75,  // Yüksekliği genişliğe oranla
     height: 230, 
     borderRadius: 40, 
     backgroundColor: '#fff', 
@@ -337,9 +350,9 @@ const styles = StyleSheet.create({
     zIndex: 10
   },
   glassInfoCard: { 
-    marginTop: 55, 
-    padding: 25, 
-    width: width * 0.85, 
+    marginTop: 35, // 55'ten 35'e çektim ki küçük ekranda sığsın
+    padding: 20, 
+    width: width * 0.85,
     backgroundColor: 'rgba(255, 255, 255, 0.1)', 
     borderRadius: 35, 
     alignItems: 'center',

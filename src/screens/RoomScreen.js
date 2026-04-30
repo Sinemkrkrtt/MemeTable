@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, Animated, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons,Entypo } from '@expo/vector-icons';
@@ -14,6 +14,8 @@ import { SITUATION_PROMPTS } from './situationPrompts';
 import DisconnectModal from './DisconnectModal'; 
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 
 
 const hashStr = (str) => {
@@ -59,6 +61,7 @@ const Snowflake = ({ delay, left, size }) => {
 };
 export default function RoomScreen({ navigation, route }) {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { roomId, myAvatarSeed, myName, isHost } = route?.params || { roomId: null, myAvatarSeed: 'Oliver', myName: 'Ben', isHost: false };
 
   const [players, setPlayers] = useState([]); 
@@ -102,6 +105,8 @@ const [highlightedCardId, setHighlightedCardId] = useState(null); // Hangi kart 
 
 const [userStats, setUserStats] = useState({ coins: 0, diamonds: 0 });
 const [isFullInventoryVisible, setIsFullInventoryVisible] = useState(false); // Büyük modal için
+
+const [isMuted, setIsMuted] = useState(false);
 
 
   useEffect(() => {
@@ -660,7 +665,13 @@ const triggerHighlight = () => {
                 <Ionicons name="person-outline" size={30} color="#9CA3AF" />
             </View>
         ) : (
-            <Image source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${avatarAnimal}&backgroundColor=ffffff` }} style={[styles.avatar, { borderColor: badgeColor, backgroundColor: '#FFF' }]} />
+          <Image 
+          source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${avatarAnimal}&backgroundColor=ffffff` }} 
+          style={[styles.avatar, { borderColor: badgeColor, backgroundColor: '#FFF' }]} 
+          contentFit="cover"
+          transition={250} // Avatar yüklendiğinde 250ms'lik zarif bir fade-in yapar
+          cachePolicy="memory-disk" // Hem RAM hem de disk üzerinde agresif önbellekleme sağlar
+        />
         )}
         <View style={[styles.nameBadge, { backgroundColor: badgeColor }]}><Text style={styles.playerName}>{name}</Text></View>
       </View>
@@ -678,84 +689,172 @@ const triggerHighlight = () => {
   const opponentPositions = [styles.topPlayer, styles.leftPlayer, styles.rightPlayer];
   const opponentColors = ["#E5E7EB", "#E5E7EB", "#E5E7EB"];
 
-  
 
-  return (
+  const toggleSound = async () => {
+  try {
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+    
+    // expo-av'nin ana ses motorunu açıp kapatır (True = Ses var, False = Ses yok)
+    await Audio.setIsEnabledAsync(!newMutedState);
+    
+    // Eğer o an çalan bir sayaç (tick) sesi varsa onu anında sustur/aç
+    if (newMutedState) {
+      if (tickSoundRef.current) await tickSoundRef.current.setVolumeAsync(0);
+      if (playTickSoundRef.current) await playTickSoundRef.current.setVolumeAsync(0);
+    } else {
+      if (tickSoundRef.current) await tickSoundRef.current.setVolumeAsync(1);
+      if (playTickSoundRef.current) await playTickSoundRef.current.setVolumeAsync(1);
+    }
+  } catch (error) {
+    console.log("Ses durumu değiştirilirken hata oluştu:", error);
+  }
+};
+
+  
+return (
     <View style={styles.container}>
       <StatusBar hidden />
       <View style={styles.whiteBackground} />
       <JokerModal 
-  visible={isFullInventoryVisible} 
-  onClose={() => setIsFullInventoryVisible(false)} 
-  onUseJoker={(id) => {
-    handleUseJoker(id);
-    setIsFullInventoryVisible(false); // Kullanınca menüyü kapat
-  }}
-  inventory={jokerInventory}
-  selectedCard={selectedCard}
-/>
+        visible={isFullInventoryVisible} 
+        onClose={() => setIsFullInventoryVisible(false)} 
+        onUseJoker={(id) => {
+          handleUseJoker(id);
+          setIsFullInventoryVisible(false); // Kullanınca menüyü kapat
+        }}
+        inventory={jokerInventory}
+        selectedCard={selectedCard}
+      />
 
-{/* Menü açıkken boşluğa tıklayınca kapanmasını sağlayan şeffaf katman */}
-{isJokerMenuVisible && (
-  <TouchableOpacity 
-    activeOpacity={1}
-    style={[StyleSheet.absoluteFillObject, { zIndex: 998 }]}
-    onPress={() => setIsJokerMenuVisible(false)}
-  />
-)}
+      {/* Menü açıkken boşluğa tıklayınca kapanmasını sağlayan şeffaf katman */}
+      {isJokerMenuVisible && (
+        <TouchableOpacity 
+          activeOpacity={1}
+          style={[StyleSheet.absoluteFillObject, { zIndex: 998 }]}
+          onPress={() => setIsJokerMenuVisible(false)}
+        />
+      )}
 
-     <View style={styles.hudWrapper}>
-  <View style={styles.hudContainer}>
-    
-    <TouchableOpacity 
-      activeOpacity={0.7} 
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setIsJokerMenuVisible(!isJokerMenuVisible);
-      }}
-      style={{ marginBottom: isJokerMenuVisible ? 10 : 0 }} 
-    >
-       <Ionicons 
-         name={isJokerMenuVisible ? "close-circle" : "flash"} 
-         size={26} 
-         color="#FF00D6" 
-         style={styles.hudTitleIcon} 
-       />
-    </TouchableOpacity>
+   
+          <View style={[
+            styles.topBarContainer, 
+            { 
+              zIndex: 50, 
+              marginLeft: Math.max(insets.left, 15) // 🚀 DÜZELTME: Çentik kadar (veya en az 15px) içeri it
+            }
+          ]}>
+        <LinearGradient 
+          colors={['rgba(255,255,255,0.95)', 'rgba(245,245,250,0.9)']} 
+          style={[styles.homeStylePill, { paddingHorizontal: 16, paddingVertical: 8 }]}
+        >
+          {/* Çıkış */}
+          <TouchableOpacity 
+            activeOpacity={0.7} 
+            onPress={() => {
+              playSound('click');
+              // 🚀 DÜZELTME: Odadan çıkmadan önce kendini Firebase'den sil!
+              if (me?.id) {
+                remove(ref(database, `rooms/${roomId}/players/${me.id}`));
+              }
+              navigation.replace('Home');
+            }}
+          >
+            <Ionicons 
+                  name="exit-outline" 
+                  size={22} 
+                  color="#FF4D00" 
+                  style={{ 
+                    textShadowColor: 'rgba(255, 59, 48, 0.5)', 
+                    textShadowRadius: 8,
+                    transform: [{ scaleX: -1 }] 
+                  }} 
+                />
+          </TouchableOpacity>
 
-    {isJokerMenuVisible && (
-      <View style={{ alignItems: 'center' }}>
-        {[
-          { id: 'joker_skip', logo: require('../../assets/joker1.png'), color: '#FF69EB' },
-          { id: 'joker_double', logo: require('../../assets/joker2.png'), color: '#FF8A00' },
-          { id: 'joker_freeze', logo: require('../../assets/joker3.png'), color: '#00E5FF' }
-        ].map((joker, index) => { 
-          const currentCount = jokerInventory[joker.id] || 0; 
-          const isDepleted = currentCount <= 0;
-          return (
-            <View key={joker.id || index} style={[styles.jokerIconWrapper, { marginVertical: 5 }]}> 
-              <TouchableOpacity 
-                activeOpacity={0.7} 
-                disabled={isDepleted} 
-                onPress={() => {
-                  handleUseJoker(joker.id);
-                }} 
-                style={[styles.jokerButton, { shadowColor: joker.color, opacity: isDepleted ? 0.3 : 1 }]}
-              >
-                <Image source={joker.logo} style={styles.jokerLogo} resizeMode="contain" />
-                {!isDepleted && (
-                  <View style={[styles.jokerBadge, { backgroundColor: joker.color }]}>
-                    <Text style={styles.jokerBadgeText}>{currentCount}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          );
-        })}
+          <View style={[styles.verticalDivider, { marginHorizontal: 12 }]} />
+
+         <TouchableOpacity activeOpacity={0.7} onPress={toggleSound}>
+              <Ionicons 
+                name={isMuted ? "volume-mute" : "volume-high"} 
+                size={22} 
+                color={isMuted ? "#FF0404E8" : "#FFD500E8"} // Kapalıysa kırmızı, açıksa gri
+              />
+            </TouchableOpacity>
+
+          <View style={[styles.verticalDivider, { marginHorizontal: 12 }]} />
+
+          {/* Market / Envanter */}
+          <TouchableOpacity activeOpacity={0.7} onPress={() => setIsFullInventoryVisible(true)}>
+             <Ionicons name="cart" size={22} color='#FF00D6' style={{ textShadowColor: 'rgba(0, 229, 255, 0.5)', textShadowRadius: 8 }} />
+          </TouchableOpacity>
+        </LinearGradient>
       </View>
-    )}
-  </View>
-</View>
+
+     <View style={[
+  styles.hudWrapper, 
+  { paddingRight: Math.max(insets.right, 10) } // 🚀 SAĞ ÇENTİK KORUMASI
+]}>
+        <View style={styles.hudContainer}>
+          
+          <TouchableOpacity 
+            activeOpacity={0.7} 
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setIsJokerMenuVisible(!isJokerMenuVisible);
+            }}
+            style={{ marginBottom: isJokerMenuVisible ? 10 : 0 }} 
+          >
+             <Ionicons 
+               name={isJokerMenuVisible ? "close-circle" : "flash"} 
+               size={30} 
+               color="#FF00D6" 
+               style={styles.hudTitleIcon} 
+             />
+          </TouchableOpacity>
+
+          {isJokerMenuVisible && (
+            <View style={{ alignItems: 'center' }}>
+              
+              {/* Mevcut Jokerler */}
+              {[
+                { id: 'joker_skip', logo: require('../../assets/joker1.png'), color: '#FF69EB' },
+                { id: 'joker_double', logo: require('../../assets/joker2.png'), color: '#FF8A00' },
+                { id: 'joker_freeze', logo: require('../../assets/joker3.png'), color: '#00E5FF' }
+              ].map((joker, index) => { 
+                const currentCount = jokerInventory[joker.id] || 0; 
+                const isDepleted = currentCount <= 0;
+                return (
+                  <View key={joker.id || index} style={[styles.jokerIconWrapper, { marginVertical: 5 }]}> 
+                    <TouchableOpacity 
+                      activeOpacity={0.7} 
+                      disabled={isDepleted} 
+                      onPress={() => {
+                        handleUseJoker(joker.id);
+                      }} 
+                      style={[styles.jokerButton, { shadowColor: joker.color, opacity: isDepleted ? 0.3 : 1 }]}
+                    >
+                    <Image 
+                      source={joker.logo} 
+                      style={styles.jokerLogo} 
+                      contentFit="contain" 
+                      transition={200} // Küçük bir fade-in ile daha zarif bir geçiş sağlar
+                      priority="high" // Jokerler oyunun kritik araçları olduğu için öncelikli yüklensin
+                      cachePolicy="memory" // Yerel dosyalar için en hızlı erişim (RAM üzerinden)
+                    />
+                      {!isDepleted && (
+                        <View style={[styles.jokerBadge, { backgroundColor: joker.color }]}>
+                          <Text style={styles.jokerBadgeText}>{currentCount}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      </View>
       
       <Animated.View pointerEvents="none" style={[styles.announcementBanner, { transform: [{ translateX: announcementAnim.interpolate({ inputRange: [0, 1], outputRange: [-width, 0] }) }] }]}>
         <LinearGradient colors={['transparent', roundEnded ? 'rgba(255, 180, 130, 0.95)' : 'rgba(255, 105, 235, 0.95)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.bannerGradient}>
@@ -768,42 +867,20 @@ const triggerHighlight = () => {
           </Text>
         </LinearGradient>
       </Animated.View>
-{/* 💎 SOL ÜST: Ana Ekran Tarzı Kapsül Gösterge 💎 */}
-      <View style={styles.topBarContainer}>
-        <View style={styles.homeStylePill}>
-          
-          {/* Market / Envanter İkonu (Tıklanınca JokerModal açılır) */}
-          <TouchableOpacity 
-            activeOpacity={0.7} 
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              setIsFullInventoryVisible(true);
-            }}
-          >
-            {/* Ionicons 'storefront' görseldeki dükkan ikonuna çok benzer */}
-           <Entypo name="shopping-cart" size={20} color="#FF00D6"  style={styles.shopPillIcon} />
-          </TouchableOpacity>
 
-          {/* Coin (Görseldeki gibi katman ikonu) */}
-          <View style={styles.statGroup}>
-            <Ionicons name="layers" size={18} color="#FFD700" />
-            <Text style={styles.homeStatText}>{userStats.coins}</Text>
-          </View>
-
-          {/* İnce Ayraç Çizgisi */}
-          <View style={styles.verticalDivider} />
-
-          {/* Elmas */}
-          <View style={styles.statGroup}>
-            <Ionicons name="diamond" size={18} color="#00E5FF" />
-            <Text style={styles.homeStatText}>{userStats.diamonds}</Text>
-          </View>
-
-        </View>
-      </View>
       <View style={styles.tableContainer}>
         <View style={styles.mainTableRim}>
-          <View style={styles.tableSurface}><Image source={require('../../assets/roomTableLogo.png')} style={styles.roomTableLogo} /></View>
+          <View style={styles.tableSurface}
+          >
+           <Image 
+            source={require('../../assets/roomTableLogo.png')} 
+            style={styles.roomTableLogo} 
+            contentFit="contain" 
+            priority="high" // Sayfa yüklenirken işlemci önceliği bu logoya verilir
+            cachePolicy="memory" // RAM'de hazır tutulur, diskten okuma gecikmesini önler
+            transition={500} // Şık bir fade-in efektiyle profesyonel bir giriş sağlar
+          />
+          </View>
 
           <PlayerSlot 
             name={`${me?.name || myName}: ${scores[me?.name || myName] || 0}`} 
@@ -889,7 +966,15 @@ const triggerHighlight = () => {
                         style={[styles.voteCardWrapper, isVoted && styles.votedCardStyle, card.isMine && styles.disabledVoteCard]} 
                         disabled={card.isMine || votedCardId !== null || phase === 'WAITING_VOTES' || phase === 'ROUND_ENDED'} onPress={() => handleVote(card.id)} activeOpacity={0.8}
                       >
-                        <Image source={{ uri: card.url }} style={styles.memeImage} />
+                       <Image 
+                          source={{ uri: card.url }} 
+                          style={styles.memeImage} 
+                          contentFit="cover" // Kartın içine tam oturması için
+                          transition={400} // Yüklendiğinde şık bir fade-in efekti
+                          priority="high" // Oylama ekranındaki en önemli görsel olduğu için
+                          cachePolicy="memory-disk" // Agresif önbellekleme
+                          placeholder={require('../../assets/placeholderAvatar.png')} // Yüklenirken boş görünmemesi için
+                      />
                         {card.isMine && (
                           <View style={styles.myCardOverlay}>
                             <Ionicons name="lock-closed" size={16} color="white" />
@@ -948,13 +1033,20 @@ const triggerHighlight = () => {
                         borderColor: borderGlow,
                         borderWidth: 2
                       }
-                    ]}>
-      <Image source={{ uri: item.url }} style={styles.memeImage} />
+                                      ]}>
+                    <Image 
+                        source={{ uri: item.url }} 
+                        style={styles.memeImage} 
+                        contentFit="cover" // Meme'in kartın içini en iyi şekilde doldurmasını sağlar
+                        transition={400} // Yüklendiğinde küt diye değil, 400ms'lik profesyonel bir yumuşaklıkla belirir
+                        priority="high" // Oylama ekranında bu görseller en önceliklidir, işlemci buna odaklanır
+                        cachePolicy="memory-disk" // Agresif önbellekleme: Bir kere oylanan meme, diskte kalsın!
+                    />
     </Animated.View>
                   {isSelected && <View style={styles.selectedBorder} />}
                   {isSelected && (
                     <TouchableOpacity style={styles.playButton} onPress={() => handlePlayCard()} activeOpacity={0.8}>
-                      <LinearGradient colors={['#FF69EB', '#FF00D6']} style={styles.playButtonGradient}>
+                      <LinearGradient colors={['#FF7C2A', '#F73ED8']} style={styles.playButtonGradient}>
                         <Text style={styles.playButtonText}>AT</Text>
                       </LinearGradient>
                     </TouchableOpacity>

@@ -3,7 +3,9 @@ import { View, Text, StyleSheet, Modal, TouchableOpacity, Dimensions, Animated }
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
+const isPortrait = height > width;
+const modalWidth = isPortrait ? '85%' : '50%'; // Dikeyde geniş, yatayda derli toplu
 
 const DisconnectModal = ({ visible, onQuit }) => {
   // 🎨 Yeni Senior Palet: Canlı Pembe -> Sıcak Turuncu
@@ -15,20 +17,20 @@ const DisconnectModal = ({ visible, onQuit }) => {
   useEffect(() => {
     if (visible) {
       // Noktanın nefes alıp vermesi için sonsuz döngü
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 0.3, // Şeffaflaş ve
-            duration: 800, // 0.8 saniyede
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1, // Geri belirginleş
-            duration: 800,
-            useNativeDriver: true,
-          })
-        ])
-      ).start();
+     Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 0.6, // 0.3 yerine 0.6 daha yumuşak bir sönme yapar
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        })
+      ])
+    ).start();
     } else {
       pulseAnim.setValue(1); // Modal kapanırsa animasyonu sıfırla
     }
@@ -98,8 +100,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  glassContainer: {
-    width: '60%', // Yatay ekrana uygun genişlik
+glassContainer: {
+    width: modalWidth, // Sabit %60 yerine dinamik genişliği verdik
     backgroundColor: 'white',
     borderRadius: 35,
     padding: 3,
@@ -107,6 +109,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 20,
     elevation: 15,
+  },
+  pulseCircle: {
+    width: 12, // 10 yerine 12 daha iyi bir odak noktası yaratır
+    height: 12,
+    borderRadius: 6,
+    marginRight: 10,
   },
   modalContent: {
     backgroundColor: 'white',
@@ -170,12 +178,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#F3F4F6',
-  },
-  pulseCircle: {
-    width: 10, // Animasyon belli olsun diye çok ufak büyüttüm
-    height: 10,
-    borderRadius: 5,
-    marginRight: 10,
   },
   reconnectingText: {
     fontFamily: 'Nunito_800ExtraBold',

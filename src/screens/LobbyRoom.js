@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, Animated, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons } from '@expo/vector-icons';
 import { database } from '../services/firebase';
 import { ref, onValue } from 'firebase/database';
 import { styles } from './RoomScreenStyles'; 
+import { Image } from 'expo-image';
 
 // 🔥 RENK PALETİ TEMA
 const THEME = {
@@ -63,7 +64,7 @@ export default function LobbyRoom({ route, navigation }) {
 
 
   useEffect(() => {
-    const lockScreen = async () => {
+  const lockScreen = async () => {
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
     };
     lockScreen();
@@ -90,9 +91,13 @@ export default function LobbyRoom({ route, navigation }) {
       }
     });
 
-    Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
+   Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
 
-    return () => unsubscribe();
+   return () => {
+      unsubscribe();
+      // Component unmount olduğunda (sayfadan çıkıldığında) ekranı tekrar dikey yap
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    };
   }, [roomId]);
 
   // 🚀 DÜZELTME: Oyuncu slot tasarımı (Yeşiller Neon Pembe yapıldı)
@@ -100,15 +105,18 @@ export default function LobbyRoom({ route, navigation }) {
     <View style={[styles.playerSlot, positionStyle]}>
       <View style={styles.avatarContainer}>
         {/* Hazırsa Neon Pembe çerçeve, değilse slotun kendi rengi */}
-        <Image 
+     <Image 
           source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${avatarAnimal}&backgroundColor=ffffff` }} 
           style={[
             styles.avatar, 
             { 
-                borderColor: isPlayerReady ? THEME.neonPink : badgeColor, // Değişti: #4ADE80 -> neonPink
+                borderColor: isPlayerReady ? THEME.neonPink : badgeColor,
                 backgroundColor: '#FFF' 
             }
           ]} 
+          contentFit="cover"
+          transition={250} // Hazır olma durumu değiştiğinde yumuşak geçiş yapar
+          cachePolicy="memory-disk" // Agresif önbellekleme ile internete bağımlılığı azaltır
         />
         {isHost && (
           <View style={{ position: 'absolute', top: -12, right: -5, backgroundColor: '#1A1A1A', borderRadius: 10, padding: 2, zIndex: 2 }}>
@@ -132,14 +140,7 @@ export default function LobbyRoom({ route, navigation }) {
       {/* Üst Joker HUD (Silik duruyor lobide) */}
       <View style={styles.hudWrapper}>
         <View style={[styles.hudContainer, { opacity: 0.3 }]}>
-          <Ionicons name="flash" size={24} color={THEME.neonPink} style={styles.hudTitleIcon} />
-          {[logoSwapHand, logoSwapCard, logoTimeFreeze].map((img, i) => (
-            <View key={i} style={styles.jokerIconWrapper}>
-              <View style={styles.jokerButton}>
-                <Image source={img} style={styles.jokerLogo} resizeMode="contain" />
-              </View>
-            </View>
-          ))}
+          <Ionicons name="flash" size={30} color={THEME.neonPink} style={styles.hudTitleIcon} />
         </View>
       </View>
 
@@ -159,7 +160,13 @@ export default function LobbyRoom({ route, navigation }) {
         <View style={styles.mainTableRim}>
           {/* Masa Yüzeyi (Tasarım aynı kaldı) */}
           <View style={styles.tableSurface}>
-            <Image source={require('../../assets/roomTableLogo.png')} style={styles.roomTableLogo} />
+           <Image 
+              source={require('../../assets/roomTableLogo.png')} 
+              style={styles.roomTableLogo} 
+              contentFit="contain"
+              priority="high" // Sayfa açılır açılmaz ilk bu çizilsin
+              cachePolicy="memory" // RAM'e kilitleyerek anında erişim sağlar
+          />
           </View>
 
           {/* Oyuncular - Renk paleti pembe/turuncu/sarı tonlarına sabitlendi */}

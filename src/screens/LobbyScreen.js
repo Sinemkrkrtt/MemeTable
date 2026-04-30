@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Share, Image, ScrollView, Dimensions, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Share, ScrollView, Dimensions, Platform, Alert } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StackActions } from '@react-navigation/native';
 import { Audio } from 'expo-av'; // 🔥 SES KÜTÜPHANESİ EKLENDİ
+import { Image } from 'expo-image';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 
 // 🔥 FIREBASE BAĞLANTILARI (auth eklendi)
 import { database, auth } from '../services/firebase';
@@ -176,6 +179,15 @@ export default function LobbyScreen({ route, navigation }) {
     catch (error) { console.log(error.message); }
   };
 
+  // 🚀 YENİ: Panoya Kopyalama Fonksiyonu
+  const copyRoomCode = async () => {
+    if (!roomId) return;
+    playSound('click');
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await Clipboard.setStringAsync(roomId);
+    Alert.alert("Kopyalandı!", "Oda kodu panoya kopyalandı. 📋");
+  };
+
   const handleBackPress = () => {
     playSound('click'); // 🔊 GERİ BUTONU SESİ
     navigation.goBack();
@@ -195,10 +207,17 @@ export default function LobbyScreen({ route, navigation }) {
         slots.push(
           <View key={player.id} style={styles.playerSlot}>
             <View style={styles.activeAvatarContainer}>
-              <Image source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${player.avatar}&backgroundColor=FFDC5E` }} style={styles.miniAvatar} />
-              <View style={[styles.statusIndicatorActive, !player.isReady && { backgroundColor: '#FF8A00' }]} />
+            <Image 
+            source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${player.avatar}&backgroundColor=FFDC5E` }} 
+            style={styles.miniAvatar} 
+            contentFit="cover"
+            transition={200} // Hazır olma durumu değiştikçe veya oyuncu değişince yumuşak geçiş yapar
+            cachePolicy="memory-disk" // Küçük resimleri hem RAM'e hem diske yazarak anında yüklenmesini sağlar
+          />
+          <View style={[styles.statusIndicatorActive, !player.isReady && { backgroundColor: '#FF8A00' }]} />
             </View>
-            <Text style={styles.playerName} numberOfLines={1}>{isMe ? "Sen" : player.name}</Text>
+            {/* 🚀 DÜZELTME: Uzun isimlerde sıkışmayı önleyen ellipsizeMode ve adjustsFontSizeToFit eklendi */}
+            <Text style={styles.playerName} numberOfLines={1} ellipsizeMode="tail" adjustsFontSizeToFit>{isMe ? "Sen" : player.name}</Text>
             <Text style={[styles.statusTextActive, !player.isReady && { color: '#FF8A00' }]}>{player.isReady ? "Hazır" : "Bekliyor"}</Text>
           </View>
         );
@@ -217,7 +236,7 @@ export default function LobbyScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={['#FF69EB', '#FFA3A5']} style={styles.headerBackground}>
+      <LinearGradient colors={['#FF69EB', '#FFA3A5','#FFBF81']} style={styles.headerBackground}>
         <View style={styles.headerNav}>
            <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
              <Ionicons name="chevron-back" size={24} color="white" />
@@ -228,8 +247,15 @@ export default function LobbyScreen({ route, navigation }) {
 
         <View style={styles.profileSection}>
           <TouchableOpacity activeOpacity={0.8} style={styles.avatarWrapper} onPress={handleAvatarEdit}>
-            <Image source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${myAvatarSeed}&backgroundColor=ffffff` }} style={styles.avatarImage} />
-            <View style={styles.editIconContainer}><MaterialCommunityIcons name="pencil" size={16} color="white" /></View>
+          <Image 
+          source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${myAvatarSeed}&backgroundColor=ffffff` }} 
+          style={styles.avatarImage} 
+          contentFit="cover" 
+          transition={300} 
+          cachePolicy="memory-disk" 
+        />
+            <View style={styles.editIconContainer}>
+              <MaterialCommunityIcons name="pencil" size={16} color="white" /></View>
           </TouchableOpacity>
           <Text style={styles.welcomeText}>Hoş geldin, <Text style={styles.nameHighlight}>{myName}</Text></Text>
         </View>
@@ -240,7 +266,10 @@ export default function LobbyScreen({ route, navigation }) {
           <View style={styles.roomCodeContainer}>
             <View>
               <Text style={styles.cardSubtitle}>KATILIM KODU</Text>
-              <Text style={styles.roomCodeText}>{roomId || '...'}</Text>
+              {/* 🚀 DÜZELTME: Koda tıklayınca kopyalaması için TouchableOpacity içine alındı */}
+              <TouchableOpacity onPress={copyRoomCode} activeOpacity={0.6}>
+                <Text style={styles.roomCodeText}>{roomId || '...'}</Text>
+              </TouchableOpacity>
             </View>
             <TouchableOpacity style={styles.shareButton} onPress={onShare}><Ionicons name="share-social" size={22} color="#FF69EB" /></TouchableOpacity>
           </View>
@@ -266,7 +295,8 @@ export default function LobbyScreen({ route, navigation }) {
       <View style={styles.footerContainer}>
         <TouchableOpacity style={[styles.actionButtonContainer, (isHost && players.length < 2) && { opacity: 0.5 }]} activeOpacity={0.9} onPress={isHost ? startGame : toggleReady} disabled={isHost && players.length < 2}>
           <LinearGradient colors={isHost ? (players.length < 2 ? ['#9CA3AF', '#6B7280'] : ['#FFBF81', '#FF69EB']) : isReady ? ['#FFBF81', '#FF69EB'] : ['#9CA3AF', '#6B7280']} style={styles.actionButton} start={{x: 0, y: 0}} end={{x: 1, y: 1}}>
-            <Text style={styles.actionButtonText}>{isHost ? (players.length < 2 ? "OYUNCU BEKLENİYOR..." : "OYUNU BAŞLAT") : (isReady ? "HAZIRIM (İPTAL ET)" : "HAZIR DEĞİLİM")}</Text>
+            {/* 🚀 DÜZELTME: Hazır Ol butonu metinleri güncellendi */}
+            <Text style={styles.actionButtonText}>{isHost ? (players.length < 2 ? "OYUNCU BEKLENİYOR..." : "OYUNU BAŞLAT") : (isReady ? "HAZIRIM (İPTAL)" : "HAZIR OL")}</Text>
             <Ionicons name={isHost ? (players.length < 2 ? "time-outline" : "play") : (isReady ? "checkmark-circle" : "close-circle")} size={22} color="white" />
           </LinearGradient>
         </TouchableOpacity>

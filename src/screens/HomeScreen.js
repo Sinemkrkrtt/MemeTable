@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, SafeAreaView, TouchableOpacity, Image, StatusBar, ScrollView, Dimensions, Animated } from 'react-native';
+import { View, Text, SafeAreaView, TouchableOpacity, StatusBar, ScrollView, Dimensions, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { doc, onSnapshot } from 'firebase/firestore'; 
@@ -8,6 +8,8 @@ import { signOut } from 'firebase/auth';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { styles, palet } from './HomeScreenStyles';
 import DailyMission from './DailyMission';
+import RandomMatchScreen from './RandomMatchScreen';
+import { Image } from 'expo-image';
 
 // 🚀 YENİ EKLENENLER: SES VE TİTREŞİM
 import { Audio } from 'expo-av';
@@ -40,7 +42,7 @@ export default function HomeScreen({ navigation }) {
 const playHomeSound = async (soundType) => {
   try {
     const soundAsset = soundType === 'money' 
-      ? require('../../assets/sounds/cha-ching.mp3') 
+      ? require('../../assets/sounds/cash.mp3') 
       : require('../../assets/sounds/ui_tap.mp3');
     
     // 🚀 unloadAsync kullanarak hafızayı temiz tutan ve daha stabil yükleme yapan yapı
@@ -112,6 +114,16 @@ const playHomeSound = async (soundType) => {
 
   if (!fontsLoaded) return null; 
 
+  
+const onPressIn = () => {
+    Animated.spring(scalePress, { toValue: 0.95, useNativeDriver: true }).start();
+  };
+
+  const onPressOut = () => {
+    Animated.spring(scalePress, { toValue: 1, friction: 3, tension: 40, useNativeDriver: true }).start();
+  };
+
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -146,29 +158,41 @@ const playHomeSound = async (soundType) => {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.creativeLogout} 
-              onPress={() => {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                signOut(auth);
-              }}
-            >
-              <Ionicons name="power" size={20} color={palet.peach} style={styles.logoutIcon} />
-            </TouchableOpacity>
+           <TouchableOpacity 
+            style={styles.creativeLogout} 
+            onPress={() => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              signOut(auth);
+            }}
+          >
+            {/* 🔥 DÜZELTME: İkonu bir View içine alıp stili o View'a veriyoruz! */}
+            <View style={styles.logoutIcon}>
+              <Ionicons name="power" size={20} color={palet.peach} />
+            </View>
+          </TouchableOpacity>
 
           </View>
 
           <Animated.View style={[styles.logoArea, { opacity: fadeAnim }]}>
-            <Image source={require('../../assets/homeLogo.png')} style={styles.homeLogoLarge} resizeMode="contain" />
+         <Image 
+          source={require('../../assets/homeLogo.png')} 
+          style={styles.homeLogoLarge} 
+          contentFit="contain"
+          priority="high" // Açılışta en önce bu yüklensin
+          transition={500} // Uygulama açılırken logonun yumuşakça belirmesini sağlar
+          cachePolicy="memory" // RAM'de hazır tutar
+      />
           </Animated.View>
 
           <View style={styles.gridContainer}>
             <Animated.View style={{ flex: 1.2, transform: [{ scale: scalePress }] }}>
-              <TouchableOpacity 
-                activeOpacity={0.9} 
-                onPress={() => handleNavigateWithAvatar('RoomScreen', { mode: 'public' })} 
-                style={styles.bigActionCard}
-              >
+                  <TouchableOpacity 
+                    activeOpacity={0.9} 
+                    onPressIn={onPressIn} // <-- Eklendi
+                    onPressOut={onPressOut} // <-- Eklendi
+                    onPress={() => handleNavigateWithAvatar('RandomMatchScreen', { mode: 'public' })} 
+                    style={styles.bigActionCard}
+                  >
                 <LinearGradient colors={[palet.vibrant, palet.peach]} style={styles.cardInner}>
                   <View style={styles.cardHeader}><Ionicons name="flash" size={30} color="white" /><View style={styles.topRightArrow}><Ionicons name="arrow-up" size={22} color="white" /></View></View>
                   <View><Text style={styles.cardTitleBig}>HIZLI{"\n"}OYNA</Text><Text style={styles.cardSubTitle}>ANINDA EŞLEŞ</Text></View>

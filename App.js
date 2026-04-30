@@ -17,6 +17,7 @@ import RoomScreen from './src/screens/RoomScreen';
 import MarketScreen from './src/screens/Market';
 import DisconnectModal from './src/screens/DisconnectModal';
 import JokerModal from  './src/screens/JokerModal';
+import RandomMatchScreen from './src/screens/RandomMatchScreen';
 
 const Stack = createStackNavigator();
 export default function App() {
@@ -50,6 +51,7 @@ export default function App() {
             <Stack.Screen name="ScoreScreen" component={ScoreScreen} />
              <Stack.Screen name="DisconnectModal" component={DisconnectModal} />
                 <Stack.Screen name="JokerModal" component={JokerModal} />
+                <Stack.Screen name="RandomMatchScreen" component={RandomMatchScreen}/>
           </>
         ) : (
           // ❌ KULLANICI ÇIKIŞ YAPMIŞSA SADECE BU EKRAN GÖRÜNÜR

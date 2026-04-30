@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'; 
 import { 
   View, Text, StyleSheet, SafeAreaView, TouchableOpacity, 
-  ScrollView, Modal, Dimensions, StatusBar, Image, FlatList, Alert 
+  ScrollView, Modal, Dimensions, StatusBar, FlatList, Platform,
+  ActivityIndicator
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
@@ -13,22 +14,41 @@ import {
   Nunito_900Black 
 } from '@expo-google-fonts/nunito';
 
-// 🚀 FİREBASE İMPORTLARI (Kendi dosya yoluna göre '../services/firebase' kısmını kontrol et)
+import { Audio } from 'expo-av';
+import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
 import { doc, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
 import { db, auth } from '../services/firebase'; 
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 55) / 2;
 
-// 🎨 Pastel Paletin
+const playSound = async (type) => {
+  const soundMap = {
+    click: require('../../assets/sounds/click.mp3'),
+    success: require('../../assets/sounds/cha-ching.mp3'), 
+    error: require('../../assets/sounds/error.mp3'),
+  };
+
+  try {
+    const { sound } = await Audio.Sound.createAsync(soundMap[type]);
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.didJustFinish) sound.unloadAsync();
+    });
+  } catch (error) {
+    console.log("Ses çalınamadı:", error);
+  }
+};
+
 const palet = {
   pink: '#FF69EB',
   softPink: '#FF86C8',
   salmon: '#FFA3A5',
   orange: '#FFBF81',
   yellow: '#FFDC5E',
-  bg: '#F8F9FE', 
-  textDark: '#1F1724',
+  bg: '#F4F6FC', 
+  textDark: '#1A131F', 
 };
 
 const STORE_DATA = {
@@ -62,10 +82,14 @@ const STORE_DATA = {
 export default function MarketScreen({ navigation }) {
   const [selectedItem, setSelectedItem] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [isPurchasing, setIsPurchasing] = useState(false); 
 
-  // 🚀 BAKIYELER BAŞLANGIÇTA 0, FIREBASE'DEN GELECEK
   const [userCoins, setUserCoins] = useState(0);
   const [userDiamonds, setUserDiamonds] = useState(0);
+
+  // 🚀 CUSTOM ALERT STATE'LERİ
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({ title: '', message: '', buttons: [] });
 
   let [fontsLoaded] = useFonts({
     Nunito_600SemiBold,
@@ -74,14 +98,16 @@ export default function MarketScreen({ navigation }) {
     Nunito_900Black,
   });
 
-  // 🚀 FIREBASE ANLIK VERİ ÇEKME (REAL-TIME LISTENER)
   useEffect(() => {
+    const configureAudio = async () => {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+    };
+    configureAudio();
+
     const user = auth.currentUser;
-    if (!user) return; // Kullanıcı giriş yapmamışsa durdur
+    if (!user) return;
 
     const userRef = doc(db, 'users', user.uid);
-    
-    // onSnapshot, veritabanındaki her değişikliği anında ekrana yansıtır
     const unsubscribe = onSnapshot(userRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -90,16 +116,29 @@ export default function MarketScreen({ navigation }) {
       }
     });
 
-    return () => unsubscribe(); // Sayfadan çıkınca dinlemeyi bırak
+    return () => unsubscribe(); 
   }, []);
 
- // 🚀 FIREBASE'E YAZAN SATIN ALMA FONKSİYONU
+  // 🚀 CUSTOM ALERT GÖSTERİCİ FONKSİYON
+  const showAlert = (title, message, buttons) => {
+    setAlertConfig({
+      title,
+      message,
+      buttons: buttons || [{ text: 'Tamam' }]
+    });
+    setAlertVisible(true);
+  };
+
   const handlePurchase = async (item) => {
-    if (!item) return;
+    if (!item || isPurchasing) return;
+    setIsPurchasing(true); 
 
     const user = auth.currentUser;
     if (!user) {
-      Alert.alert("Hata", "Lütfen önce giriş yapın.");
+      playSound('error');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showAlert("Hata", "Lütfen önce giriş yapın.");
+      setIsPurchasing(false);
       return;
     }
 
@@ -107,59 +146,69 @@ export default function MarketScreen({ navigation }) {
 
     try {
       if (item.type === 'coin') {
-        // Joker Satın Alma (Coin ile alınır)
         if (userCoins >= item.price) {
-          
-          // 🚀 KRİTİK DÜZELTME: jokers.item.id YERİNE direkt item.id kullanıyoruz
-          // Çünkü veritabanında joker_skip, joker_double gibi ana dizindeler.
           await updateDoc(userRef, {
-            coins: increment(-item.price), // Kasadan coini düş
-            [item.id]: increment(1)        // joker_skip, joker_double veya joker_freeze'i 1 artır
+            coins: increment(-item.price), 
+            [item.id]: increment(1)        
           });
-
-          Alert.alert("Başarılı!", `Tebrikler, ${item.name} envanterinize eklendi.`);
+          playSound('success'); 
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showAlert("Başarılı!", `Tebrikler, ${item.name} envanterinize eklendi.`);
           setModalVisible(false);
         } else {
-          Alert.alert("Yetersiz Bakiye", "Bunun için yeterli coininiz yok. Lütfen kasa doldurun.");
+          playSound('error'); 
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          showAlert("Yetersiz Bakiye", "Bunun için yeterli coininiz yok. Lütfen kasa doldurun.");
         }
       } 
       else if (item.type === 'diamond') {
-        // Coin Satın Alma (Elmas ile alınır)
         if (userDiamonds >= item.price) {
           await updateDoc(userRef, {
             diamonds: increment(-item.price), 
             coins: increment(item.amount)     
           });
-          Alert.alert("Kasa Doldu!", `Tebrikler, +${item.amount} Coin hesabınıza eklendi.`);
+          playSound('success'); 
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showAlert("Kasa Doldu!", `Tebrikler, +${item.amount} Coin hesabınıza eklendi.`);
           setModalVisible(false);
         } else {
-          Alert.alert("Yetersiz Elmas", "Yeterli elmasınız yok. Lütfen premium elmas satın alın.");
+          playSound('error'); 
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          showAlert("Yetersiz Elmas", "Yeterli elmasınız yok. Lütfen premium elmas satın alın.");
         }
       } 
       else if (item.type === 'real') {
-        // Elmas Satın Alma (Gerçek Para Simülasyonu)
-        Alert.alert(
+        playSound('click');
+        showAlert(
           "Ödeme Onayı", 
           `${item.price} tutarındaki ödeme App Store / Google Play üzerinden yapılacaktır. Onaylıyor musunuz?`,
           [
-            { text: "İptal", style: "cancel" },
+            { text: "İptal", style: "cancel", onPress: () => setIsPurchasing(false) },
             { 
               text: "Satın Al", 
               onPress: async () => {
-                await updateDoc(userRef, { 
-                  diamonds: increment(item.amount) 
-                });
-                Alert.alert("Ödeme Başarılı!", `Tebrikler, +${item.amount} Elmas hesabınıza eklendi.`);
-                setModalVisible(false);
+                setTimeout(async () => {
+                  await updateDoc(userRef, { diamonds: increment(item.amount) });
+                  playSound('success'); 
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  showAlert("Ödeme Başarılı!", `Tebrikler, +${item.amount} Elmas hesabınıza eklendi.`);
+                  setModalVisible(false);
+                  setIsPurchasing(false);
+                }, 1500); 
               }
             }
           ]
         );
+        return; 
       }
     } catch (error) {
       console.error("Satın alma hatası:", error);
-      Alert.alert("Hata", "İşlem gerçekleştirilemedi.");
+      playSound('error');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showAlert("Hata", "İşlem gerçekleştirilemedi.");
     }
+    
+    setIsPurchasing(false); 
   };
 
   const renderIcon = (item, size) => {
@@ -170,15 +219,31 @@ export default function MarketScreen({ navigation }) {
   };
 
   const renderJokerCard = (item) => (
-    <TouchableOpacity key={item.id} style={styles.jokerCard} activeOpacity={0.9} onPress={() => { setSelectedItem(item); setModalVisible(true); }}>
+    <TouchableOpacity 
+      key={item.id} 
+      style={styles.jokerCard} 
+      activeOpacity={0.8} 
+      onPress={() => { 
+        playSound('click');
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setSelectedItem(item); 
+        setModalVisible(true); 
+      }}
+    >
       <View style={[styles.jokerIconBg, { backgroundColor: item.color + '15' }]}>
-        <Image source={item.source} style={styles.jokerImage} resizeMode="contain" />
+      <Image 
+        source={item.source} 
+        style={styles.jokerImage} 
+        contentFit="contain" 
+        transition={200} // Küçük bir fade-in ile daha premium bir geçiş sağlar
+        cachePolicy="memory" // Yerel (local) dosyalar için en hızlı erişim politikası
+      />
       </View>
       <View style={styles.jokerInfo}>
         <Text style={styles.jokerName}>{item.name}</Text>
         <Text style={styles.jokerDesc} numberOfLines={2}>{item.desc}</Text>
-        <LinearGradient colors={[palet.yellow, palet.orange]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={[styles.actionButton, { marginTop: 8 }]}>
-          <FontAwesome5 name="coins" size={12} color="white" style={{ marginRight: 6 }} />
+        <LinearGradient colors={[item.color, palet.orange]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={[styles.actionButton, { marginTop: 12 }]}>
+          <FontAwesome5 name="coins" size={11} color="white" style={{ marginRight: 6 }} />
           <Text style={styles.actionButtonText}>{item.price}</Text>
         </LinearGradient>
       </View>
@@ -186,19 +251,30 @@ export default function MarketScreen({ navigation }) {
   );
 
   const renderBoxCard = (item) => (
-    <TouchableOpacity key={item.id} style={styles.boxCard} activeOpacity={0.9} onPress={() => { setSelectedItem(item); setModalVisible(true); }}>
+    <TouchableOpacity 
+      key={item.id} 
+      style={styles.boxCard} 
+      activeOpacity={0.8} 
+      onPress={() => { 
+        playSound('click');
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setSelectedItem(item); 
+        setModalVisible(true); 
+      }}
+    >
       {item.badge && (
         <LinearGradient colors={['#FF007A', '#FF69EB']} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.badge}>
           <Text style={styles.badgeText}>{item.badge}</Text>
         </LinearGradient>
       )}
       <View style={[styles.boxIconBg, { backgroundColor: item.color + '15' }]}>
-        {renderIcon(item, 45)}
+        {renderIcon(item, 40)}
       </View>
       <Text style={styles.boxName} numberOfLines={1}>{item.name}</Text>
       <Text style={styles.boxAmount}>+{item.amount}</Text>
-      <LinearGradient colors={[palet.pink, palet.orange]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={[styles.actionButton, { marginTop: 15, width: '100%' }]}>
-        {item.type !== 'real' && <FontAwesome5 name={item.type === 'coin' ? 'coins' : 'gem'} size={12} color="white" style={{ marginRight: 6 }} />}
+      
+      <LinearGradient colors={[item.color, palet.orange]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={[styles.actionButton, { marginTop: 16, width: '100%' }]}>
+        {item.type !== 'real' && <FontAwesome5 name={item.type === 'coin' ? 'coins' : 'gem'} size={11} color="white" style={{ marginRight: 6 }} />}
         <Text style={[styles.actionButtonText, { color: 'white' }]}>{item.price}</Text>
       </LinearGradient>
     </TouchableOpacity>
@@ -212,27 +288,67 @@ export default function MarketScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
+      {/* 🚀 CUSTOM ALERT MODAL */}
+      <Modal visible={alertVisible} transparent animationType="fade">
+        <View style={styles.alertOverlay}>
+          <View style={styles.alertContainer}>
+            <LinearGradient colors={[palet.pink, palet.orange]} start={{x:0, y:0}} end={{x:1, y:1}} style={styles.alertHeaderIcon}>
+              <Ionicons name="notifications-outline" size={34} color="white" />
+            </LinearGradient>
+            
+            <Text style={styles.alertTitle}>{alertConfig.title}</Text>
+            <Text style={styles.alertMessage}>{alertConfig.message}</Text>
+            
+            <View style={styles.alertButtonGroup}>
+              {alertConfig.buttons.map((btn, index) => (
+                <TouchableOpacity 
+                  key={index}
+                  style={[
+                    styles.alertBtn, 
+                    btn.style === 'cancel' ? styles.alertBtnCancel : styles.alertBtnConfirm,
+                    alertConfig.buttons.length > 1 && { flex: 1, marginHorizontal: 6 }
+                  ]} 
+                  onPress={() => {
+                    setAlertVisible(false);
+                    if (btn.onPress) btn.onPress();
+                  }}
+                  activeOpacity={0.8}
+                >
+                  {btn.style !== 'cancel' ? (
+                    <LinearGradient colors={[palet.pink, palet.orange]} start={{x:0, y:0}} end={{x:1, y:1}} style={styles.alertBtnGradient}>
+                      <Text style={styles.alertBtnTextConfirm}>{btn.text}</Text>
+                    </LinearGradient>
+                  ) : (
+                    <Text style={styles.alertBtnTextCancel}>{btn.text}</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={28} color={palet.textDark} />
+        <TouchableOpacity onPress={() => { playSound('click'); navigation.goBack(); }} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={26} color={palet.textDark} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>MAĞAZA</Text>
         <View style={styles.premiumVault}>
           <View style={styles.vaultItem}>
-            <FontAwesome5 name="coins" size={13} color="yellow" />
+            <FontAwesome5 name="coins" size={12} color="#FFDC5E" />
             <Text style={styles.vaultText}>{userCoins}</Text>
           </View>
           <View style={styles.vaultSeparator} />
           <View style={styles.vaultItem}>
-            <FontAwesome5 name="gem" size={13} color="lightblue" />
+            <FontAwesome5 name="gem" size={12} color="#00D2FF" />
             <Text style={styles.vaultText}>{userDiamonds}</Text>
           </View>
         </View>
       </View>
 
       {/* TÜM MARKET ANA KAYDIRMA ALANI */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 50, paddingTop: 10 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 50, paddingTop: 5 }}>
         
         {/* KATEGORİ: ÜCRETSİZ KAZAN */}
         <View style={styles.sectionHeader}>
@@ -243,21 +359,21 @@ export default function MarketScreen({ navigation }) {
         <TouchableOpacity 
           style={styles.adBannerCard} 
           activeOpacity={0.9} 
-          onPress={() => Alert.alert('Reklam', 'Bu özellik uygulama markete yüklendiğinde aktif olacaktır.')}
+          onPress={() => { playSound('click'); showAlert('Reklam', 'Bu özellik uygulama markete yüklendiğinde aktif olacaktır.'); }}
         >
           <LinearGradient colors={[palet.orange, palet.pink]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.adBannerGradient}>
             <View style={styles.adBannerInfo}>
               <View style={styles.adIconContainer}>
-                <Ionicons name="play-circle" size={32} color={palet.pink} />
+                <Ionicons name="play" size={24} color={palet.pink} style={{ marginLeft: 3 }} />
               </View>
-              <View style={{ marginLeft: 12 }}>
+              <View style={{ marginLeft: 16 }}>
                 <Text style={styles.adBannerTitle}>Reklam İzle</Text>
                 <Text style={styles.adBannerSub}>Ücretsiz Coin Kazan</Text>
               </View>
             </View>
             <View style={styles.adRewardBox}>
               <Text style={styles.adRewardText}>+50</Text>
-              <FontAwesome5 name="coins" size={14} color="#FFD700" style={{ marginLeft: 4 }} />
+              <FontAwesome5 name="coins" size={14} color="#FFD700" style={{ marginLeft: 6 }} />
             </View>
           </LinearGradient>
         </TouchableOpacity>
@@ -273,8 +389,8 @@ export default function MarketScreen({ navigation }) {
           data={STORE_DATA.jokers}
           keyExtractor={item => item.id}
           renderItem={({ item }) => renderJokerCard(item)}
-          contentContainerStyle={{ paddingLeft: 12, paddingRight: 20 }}
-          snapToInterval={width * 0.85 + 16} 
+          contentContainerStyle={{ paddingLeft: 20, paddingRight: 10, paddingBottom: 10 }}
+          snapToInterval={width * 0.82 + 16} 
           decelerationRate="fast"
           snapToAlignment="start"
         />
@@ -303,30 +419,51 @@ export default function MarketScreen({ navigation }) {
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <TouchableOpacity style={styles.closeBtn} onPress={() => setModalVisible(false)}>
-              <Ionicons name="close-circle" size={32} color="#E0E0E0" />
+            {/* Modal Sürükleme Çubuğu */}
+            <View style={styles.modalDragIndicator} />
+            
+            <TouchableOpacity style={styles.closeBtn} onPress={() => { playSound('click'); setModalVisible(false); }}>
+              <Ionicons name="close-circle" size={30} color="#CBD5E1" />
             </TouchableOpacity>
 
             {selectedItem && (
               <>
-                <View style={[styles.modalIconBg, { backgroundColor: selectedItem.color + '20' }]}>
+                <View style={[styles.modalIconBg, { backgroundColor: selectedItem.color + '15' }]}>
                   {selectedItem.isImage ? (
-                    <Image source={selectedItem.source} style={{ width: 80, height: 80 }} resizeMode="contain" />
+              <Image 
+              source={selectedItem.source} 
+              style={{ width: 85, height: 85 }} 
+              contentFit="contain" 
+              transition={300} // Modal açıldığında görselin küt diye gelmesini engeller
+              priority="high" // Kullanıcı ürüne tıkladığı için en öncelikli bu yüklensin
+              cachePolicy="memory" // Ürün ikonlarını RAM'de hazır tutarak anında gösterir
+            />
                   ) : (
-                    renderIcon(selectedItem, 80)
+                    renderIcon(selectedItem, 75)
                   )}
                 </View>
                 
                 <Text style={styles.modalTitle}>{selectedItem.name}</Text>
                 {selectedItem.desc && <Text style={styles.modalDesc}>{selectedItem.desc}</Text>}
-                {selectedItem.amount && <Text style={styles.modalAmountText}>+{selectedItem.amount} İçerir</Text>}
+                {selectedItem.amount && <Text style={styles.modalAmountText}>+{selectedItem.amount} Eklenecek</Text>}
 
-                {/* 🚀 SATIN AL BUTONU */}
-                <TouchableOpacity style={styles.buyBtn} activeOpacity={0.9} onPress={() => handlePurchase(selectedItem)}>
-                  <LinearGradient colors={[palet.pink, palet.orange]} style={styles.buyBtnGradient}>
-                    <Text style={styles.buyBtnText}>
-                      {selectedItem.price} {selectedItem.type === 'real' ? 'ile Satın Al' : selectedItem.type.toUpperCase() + ' ÖDE'}
-                    </Text>
+                <TouchableOpacity 
+                  style={styles.buyBtn} 
+                  activeOpacity={0.9} 
+                  onPress={() => handlePurchase(selectedItem)}
+                  disabled={isPurchasing} 
+                >
+                  <LinearGradient colors={[selectedItem.color || palet.pink, palet.orange]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.buyBtnGradient}>
+                    {isPurchasing ? (
+                      <ActivityIndicator color="white" size="small" />
+                    ) : (
+                      <>
+                        <Text style={styles.buyBtnText}>
+                          {selectedItem.price} {selectedItem.type === 'real' ? 'ile Satın Al' : selectedItem.type.toUpperCase() + ' ÖDE'}
+                        </Text>
+                        <Ionicons name="arrow-forward" size={20} color="white" style={{ position: 'absolute', right: 24 }} />
+                      </>
+                    )}
                   </LinearGradient>
                 </TouchableOpacity>
               </>
@@ -340,47 +477,76 @@ export default function MarketScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: palet.bg },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 },
-  backBtn: { width: 40 },
-  headerTitle: { fontSize: 24, fontFamily: 'Nunito_900Black', color: palet.textDark, letterSpacing: -0.5 },
-  premiumVault: { flexDirection: 'row', backgroundColor: palet.salmon, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, elevation: 5, shadowColor: palet.orange, shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+  
+  // HEADER
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 40 : 10, paddingBottom: 15 },
+  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-start' },
+  headerTitle: { fontSize: 22, fontFamily: 'Nunito_900Black', color: palet.textDark, letterSpacing: 0.5 },
+  premiumVault: { flexDirection: 'row', backgroundColor: '#00000057', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
   vaultItem: { flexDirection: 'row', alignItems: 'center' },
-  vaultText: { fontFamily: 'Nunito_900Black', fontSize: 14, color: 'white', marginLeft: 6 },
-  vaultSeparator: { width: 1, backgroundColor: 'rgba(255,255,255,0.4)', marginHorizontal: 10 },
-  sectionHeader: { marginHorizontal: 20, marginTop: 5, marginBottom: 15 },
-  sectionTitle: { fontFamily: 'Nunito_900Black', fontSize: 20, color: palet.textDark },
-  sectionSub: { fontFamily: 'Nunito_600SemiBold', fontSize: 13, color: '#888', marginTop: 2 },
-  gridContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 10 },
-  jokerCard: { flexDirection: 'row', backgroundColor: 'white', width: width * 0.85, marginHorizontal: 8, marginBottom: 15, padding: 18, borderRadius: 28, shadowColor: palet.pink, shadowOpacity: 0.08, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
-  jokerIconBg: { width: 75, height: 75, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  jokerImage: { width: 45, height: 45 },
-  jokerInfo: { flex: 1, marginLeft: 16, justifyContent: 'center' },
-  jokerName: { fontFamily: 'Nunito_900Black', fontSize: 17, color: palet.textDark },
-  jokerDesc: { fontFamily: 'Nunito_600SemiBold', fontSize: 12, color: '#888', marginTop: 2, lineHeight: 16 },
-  boxCard: { width: cardWidth, marginBottom: 15, backgroundColor: 'white', borderRadius: 28, padding: 15, alignItems: 'center', shadowColor: palet.pink, shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
-  boxIconBg: { width: 65, height: 65, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  boxName: { fontFamily: 'Nunito_900Black', fontSize: 16, color: palet.textDark, textAlign: 'center' },
-  boxAmount: { fontFamily: 'Nunito_800ExtraBold', fontSize: 14, color: '#888', marginTop: 4 },
-  actionButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 10, borderRadius: 16 },
-  actionButtonText: { fontFamily: 'Nunito_900Black', fontSize: 14, color: 'white' },
-  badge: { position: 'absolute', top: -12, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, zIndex: 10, shadowColor: '#FF007A', shadowOpacity: 0.8, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
-  badgeText: { color: 'white', fontSize: 10, fontFamily: 'Nunito_900Black', letterSpacing: 0.8, textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: 'white', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 30, alignItems: 'center' },
-  closeBtn: { position: 'absolute', top: 20, right: 20 },
-  modalIconBg: { width: 120, height: 120, borderRadius: 60, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  modalTitle: { fontFamily: 'Nunito_900Black', fontSize: 24, color: palet.textDark },
-  modalDesc: { fontFamily: 'Nunito_600SemiBold', fontSize: 15, color: '#666', textAlign: 'center', marginTop: 10 },
-  modalAmountText: { fontFamily: 'Nunito_800ExtraBold', color: palet.salmon, marginTop: 15 },
-  buyBtn: { width: '100%', marginTop: 30, shadowColor: palet.pink, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
-  buyBtnGradient: { paddingVertical: 18, borderRadius: 20, alignItems: 'center' },
-  buyBtnText: { color: 'white', fontFamily: 'Nunito_900Black', fontSize: 16 },
-  adBannerCard: { marginHorizontal: 20, marginBottom: 20, borderRadius: 24, shadowColor: palet.orange, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
-  adBannerGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderRadius: 24 },
+  vaultText: { fontFamily: 'Nunito_800ExtraBold', fontSize: 13, color: 'white', marginLeft: 6, letterSpacing: 0.5 },
+  vaultSeparator: { width: 1, backgroundColor: 'rgba(255, 255, 255, 0.2)', marginHorizontal: 12 },
+  
+  // SECTIONS
+  sectionHeader: { marginHorizontal: 20, marginTop: 10, marginBottom: 16 },
+  sectionTitle: { fontFamily: 'Nunito_900Black', fontSize: 19, color: palet.textDark, letterSpacing: -0.3 },
+  sectionSub: { fontFamily: 'Nunito_600SemiBold', fontSize: 13, color: '#64748B', marginTop: 4, letterSpacing: 0.2 },
+  
+  // AD BANNER
+  adBannerCard: { marginHorizontal: 20, marginBottom: 24, borderRadius: 24, shadowColor: palet.pink, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
+  adBannerGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderRadius: 24 },
   adBannerInfo: { flexDirection: 'row', alignItems: 'center' },
-  adIconContainer: { backgroundColor: 'white', width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5, elevation: 3 },
-  adBannerTitle: { fontFamily: 'Nunito_900Black', fontSize: 18, color: 'white' },
-  adBannerSub: { fontFamily: 'Nunito_600SemiBold', fontSize: 13, color: 'rgba(255,255,255,0.9)', marginTop: 2 },
-  adRewardBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' },
-  adRewardText: { fontFamily: 'Nunito_900Black', fontSize: 18, color: 'white' }
+  adIconContainer: { backgroundColor: 'white', width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
+  adBannerTitle: { fontFamily: 'Nunito_900Black', fontSize: 18, color: 'white', letterSpacing: 0.5 },
+  adBannerSub: { fontFamily: 'Nunito_700Bold', fontSize: 13, color: 'rgba(255,255,255,0.9)', marginTop: 2 },
+  adRewardBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' },
+  adRewardText: { fontFamily: 'Nunito_900Black', fontSize: 16, color: 'white' },
+
+  // JOKER CARDS
+  jokerCard: { flexDirection: 'row', backgroundColor: 'white', width: width * 0.82, marginRight: 16, padding: 16, borderRadius: 28, borderWidth: 1, borderColor: 'rgba(0,0,0,0.03)', shadowColor: '#94A3B8', shadowOpacity: 0.15, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
+  jokerIconBg: { width: 80, height: 80, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+  jokerImage: { width: 48, height: 48 },
+  jokerInfo: { flex: 1, marginLeft: 16, justifyContent: 'center' },
+  jokerName: { fontFamily: 'Nunito_900Black', fontSize: 17, color: palet.textDark, letterSpacing: -0.2 },
+  jokerDesc: { fontFamily: 'Nunito_600SemiBold', fontSize: 12, color: '#64748B', marginTop: 4, lineHeight: 18 },
+
+  // BOX CARDS (GRID)
+  gridContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 15 },
+  boxCard: { width: cardWidth, backgroundColor: 'white', borderRadius: 28, padding: 18, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.03)', shadowColor: '#94A3B8', shadowOpacity: 0.15, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
+  boxIconBg: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  boxName: { fontFamily: 'Nunito_900Black', fontSize: 15, color: palet.textDark, textAlign: 'center', letterSpacing: -0.2 },
+  boxAmount: { fontFamily: 'Nunito_800ExtraBold', fontSize: 13, color: '#64748B', marginTop: 6 },
+  
+  // BUTTONS & BADGES
+  actionButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 10, borderRadius: 14 },
+  actionButtonText: { fontFamily: 'Nunito_900Black', fontSize: 13, color: 'white', letterSpacing: 0.5 },
+  badge: { position: 'absolute', top: -12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, zIndex: 10, shadowColor: '#FF007A', shadowOpacity: 0.4, shadowRadius: 6, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  badgeText: { color: 'white', fontSize: 9, fontFamily: 'Nunito_900Black', letterSpacing: 1 },
+
+  // MODAL (BOTTOM SHEET)
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: 'white', borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingHorizontal: 30, paddingBottom: Platform.OS === 'ios' ? 40 : 30, paddingTop: 15, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20, shadowOffset: { width: 0, height: -10 }, elevation: 20 },
+  modalDragIndicator: { width: 40, height: 5, backgroundColor: '#E2E8F0', borderRadius: 3, marginBottom: 20 },
+  closeBtn: { position: 'absolute', top: 20, right: 24, zIndex: 10 },
+  modalIconBg: { width: 130, height: 130, borderRadius: 65, justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
+  modalTitle: { fontFamily: 'Nunito_900Black', fontSize: 26, color: palet.textDark, letterSpacing: -0.5 },
+  modalDesc: { fontFamily: 'Nunito_600SemiBold', fontSize: 15, color: '#64748B', textAlign: 'center', marginTop: 12, lineHeight: 22, paddingHorizontal: 10 },
+  modalAmountText: { fontFamily: 'Nunito_900Black', fontSize: 18, color: palet.pink, marginTop: 20, letterSpacing: 0.5 },
+  buyBtn: { width: '100%', marginTop: 30, shadowColor: palet.pink, shadowOpacity: 0.4, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+  buyBtnGradient: { paddingVertical: 20, borderRadius: 24, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' },
+  buyBtnText: { color: 'white', fontFamily: 'Nunito_900Black', fontSize: 16, letterSpacing: 0.5 },
+
+  // 🚀 CUSTOM ALERT STYLES
+  alertOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  alertContainer: { width: width * 0.85, backgroundColor: 'white', borderRadius: 30, padding: 25, alignItems: 'center', elevation: 20 },
+  alertHeaderIcon: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 20, marginTop: -60, borderWidth: 5, borderColor: 'white' },
+  alertTitle: { fontSize: 20, fontFamily: 'Nunito_900Black', color: palet.textDark, marginBottom: 10, textAlign: 'center' },
+  alertMessage: { fontSize: 14, fontFamily: 'Nunito_600SemiBold', color: '#64748B', textAlign: 'center', lineHeight: 20, marginBottom: 25 },
+  alertButtonGroup: { flexDirection: 'row', width: '100%', justifyContent: 'center' },
+  alertBtn: { height: 50, borderRadius: 15, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', minWidth: 100 },
+  alertBtnConfirm: { flex: 1, shadowColor: palet.pink, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
+  alertBtnCancel: { flex: 1, backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#E2E8F0' },
+  alertBtnGradient: { flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' },
+  alertBtnTextConfirm: { color: 'white', fontSize: 15, fontFamily: 'Nunito_800ExtraBold' },
+  alertBtnTextCancel: { color: '#64748B', fontSize: 15, fontFamily: 'Nunito_800ExtraBold' }
 });
