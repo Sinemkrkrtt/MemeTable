@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Dimensions, Keyboa
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Audio } from 'expo-av'; // 🔥 SES KÜTÜPHANESİ EKLENDİ
 
 // 🚀 DÜZELTME: Firebase Firestore'dan getDoc ve db eklendi!
 import { doc, getDoc } from 'firebase/firestore';
@@ -10,12 +11,32 @@ import { auth, db } from '../services/firebase';
 
 const { width } = Dimensions.get('window');
 
+// 🔊 SES ÇALMA YARDIMCI FONKSİYONU
+const playSound = async (type) => {
+  const soundMap = {
+    click: require('../../assets/sounds/click.mp3'),
+    ready: require('../../assets/sounds/ready.mp3'), // Kullanılmıyor ama listede dursun
+    join: require('../../assets/sounds/join.mp3'), // Başarılı giriş için
+    start: require('../../assets/sounds/start.mp3'),
+    error: require('../../assets/sounds/error.mp3'), // Hatalı kod için
+  };
+
+  try {
+    const { sound } = await Audio.Sound.createAsync(soundMap[type]);
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.didJustFinish) sound.unloadAsync();
+    });
+  } catch (error) {
+    console.log("Ses çalınamadı:", error);
+  }
+};
+
 export default function JoinRoom({ navigation, route }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [manualCode, setManualCode] = useState('');
 
-  // 🚀 DÜZELTME: Fonksiyonu async yaptık ki Firebase'i bekleyebilsin
   const handleJoinRoom = async (rawData) => {
     if (!rawData || rawData.trim().length === 0 || scanned) return;
     
@@ -30,10 +51,13 @@ export default function JoinRoom({ navigation, route }) {
     const cleanCode = code.toUpperCase().trim();
 
     if (cleanCode.includes('.') || cleanCode.includes(':')) {
+      playSound('error'); // 🔊 HATA SESİ
       alert("Geçersiz QR! Lütfen sadece oyun içi oda kodunu okutun.");
       setTimeout(() => setScanned(false), 2000); 
       return; 
     }
+
+    playSound('join'); // 🔊 BAŞARILI GİRİŞ/TARAMA SESİ
 
     const params = route.params || {};
     const selectedAvatar = params.userAvatar || params.myAvatarSeed || 'Oliver';
@@ -70,6 +94,20 @@ export default function JoinRoom({ navigation, route }) {
     setTimeout(() => setScanned(false), 1500);
   };
 
+  const handleBackPress = () => {
+    playSound('click'); // 🔊 GERİ BUTONU SESİ
+    navigation.goBack();
+  };
+
+  const handleManualJoin = () => {
+    if (manualCode.length < 3) {
+       playSound('error');
+       return;
+    }
+    playSound('click'); // 🔊 BUTONA BASMA SESİ
+    handleJoinRoom(manualCode);
+  };
+
   if (!permission) return <View style={styles.container} />;
 
   if (!permission.granted) {
@@ -81,7 +119,10 @@ export default function JoinRoom({ navigation, route }) {
           <Text style={styles.permissionTitle}>Kamera İzni Gerekli</Text>
           <Text style={styles.permissionText}>Odalara QR kod ile hızlıca katılabilmek için kameralara erişmemiz gerekiyor Sinem! 📸</Text>
           
-          <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
+          <TouchableOpacity style={styles.permissionBtn} onPress={() => {
+              playSound('click'); // 🔊 İZİN BUTONU SESİ
+              requestPermission();
+          }}>
             <LinearGradient colors={['#FFBF81', '#FF69EB']} style={styles.btnGradient} start={{x: 0, y: 0}} end={{x: 1, y: 1}}>
               <Text style={styles.permissionBtnText}>İzin Ver</Text>
             </LinearGradient>
@@ -96,7 +137,7 @@ export default function JoinRoom({ navigation, route }) {
       <StatusBar barStyle="dark-content" backgroundColor="#F3F4F6" />
       
       <View style={styles.headerNav}>
-         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+         <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
            <Ionicons name="chevron-back" size={24} color="#1F2937" />
          </TouchableOpacity>
          <Text style={styles.headerTitle}>ODAYA KATIL</Text>
@@ -145,7 +186,7 @@ export default function JoinRoom({ navigation, route }) {
           <TouchableOpacity 
             style={[styles.joinBtnContainer, manualCode.length < 3 && { opacity: 0.5 }]} 
             disabled={manualCode.length < 3}
-            onPress={() => handleJoinRoom(manualCode)}
+            onPress={handleManualJoin}
           >
             <LinearGradient colors={['#FFBF81', '#FF69EB']} style={styles.joinBtnGradient}>
               <Text style={styles.joinBtnText}>MASAYA OTUR</Text>

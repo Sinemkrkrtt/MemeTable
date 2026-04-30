@@ -15,6 +15,8 @@ import ScoreScreen from './src/screens/scoreScreen';
 import AvatarScreen from './src/screens/AvatarScreen';
 import RoomScreen from './src/screens/RoomScreen';
 import MarketScreen from './src/screens/Market';
+import DisconnectModal from './src/screens/DisconnectModal';
+import JokerModal from  './src/screens/JokerModal';
 
 const Stack = createStackNavigator();
 export default function App() {
@@ -46,6 +48,8 @@ export default function App() {
             <Stack.Screen name="JoinRoom" component={JoinRoom} />
             <Stack.Screen name="MemeLibrary" component={MemeLibrary} />
             <Stack.Screen name="ScoreScreen" component={ScoreScreen} />
+             <Stack.Screen name="DisconnectModal" component={DisconnectModal} />
+                <Stack.Screen name="JokerModal" component={JokerModal} />
           </>
         ) : (
           // ❌ KULLANICI ÇIKIŞ YAPMIŞSA SADECE BU EKRAN GÖRÜNÜR

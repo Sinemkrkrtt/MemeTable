@@ -5,6 +5,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { doc, updateDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 
+// 🚀 YENİ EKLENEN KÜTÜPHANELER
+import { Audio } from 'expo-av';
+import * as Haptics from 'expo-haptics';
+
 const { width } = Dimensions.get('window');
 
 const REWARDS = [
@@ -27,7 +31,32 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
 
   const palet = { vibrant: '#FF00D6', orange: '#FF8A00', gray: '#D1D5DB' ,purple: 'rgb(199, 13, 199)', gold: '#FFD700',peach: '#FFA3A5'};
 
+  // 🚀 SES ÇALMA YARDIMCI FONKSİYONU
+  const playRevealSound = async () => {
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        require('../../assets/sounds/magic_reveal.mp3'),
+        { shouldPlay: true }
+      );
+      sound.setOnPlaybackStatusUpdate(async (status) => {
+        if (status.didJustFinish) {
+          await sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      console.log("Ses çalınamadı:", error);
+    }
+  };
+
   useEffect(() => {
+    // iOS sessiz mod ayarı
+    const setupAudio = async () => {
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+      });
+    };
+    setupAudio();
+
     if (isModalVisible) {
       Animated.loop(Animated.timing(rotateAnim, { toValue: 1, duration: 12000, useNativeDriver: true })).start();
     }
@@ -49,6 +78,10 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
   const spin = rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   const handleInstantOpen = () => {
+    // 🚀 AKSİYON: Kutuya basınca ses çal ve titret
+    playRevealSound();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
     const randomReward = REWARDS[Math.floor(Math.random() * REWARDS.length)];
     setCurrentReward(randomReward);
     setIsModalVisible(true);
@@ -61,16 +94,24 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
   const handleClaimReward = async () => {
     if (isClaiming) return;
     setIsClaiming(true);
+    
+    // Onay titreşimi
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
     const user = auth.currentUser;
     if (user) {
       const userRef = doc(db, "users", user.uid);
       try {
-        let updateData = { wonHearts: 0, isBoxOpened: false }; 
-        
-        // 🔥 DİNAMİK ARTIŞ MANTIĞI
+       let updateData = { 
+  wonHearts: 0, 
+  isBoxOpened: false 
+};
+
         if (currentReward.type === 'joker') {
-          updateData[`jokers.${currentReward.id}`] = increment(1);
-        } else if (currentReward.id === 'coin') {
+        // Obje içindeki alanı güncellemek için dot notation (nokta kullanımı)
+        updateData[`joker_skip`] = increment(1); // Veritabanındaki joker alan adın neyse o (joker_skip, joker1 vb.)
+        }
+         else if (currentReward.id === 'coin') {
           updateData[`coins`] = increment(500);
         } else if (currentReward.id === 'diamond') {
           updateData[`diamonds`] = increment(10);
@@ -199,10 +240,10 @@ const styles = StyleSheet.create({
   titleWithBadge: { flexDirection: 'row', alignItems: 'center' },
   missionIconBadge: { width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   missionMainTitle: { 
-    fontFamily: 'Nunito_900Black', // Daha güçlü bir ana başlık
+    fontFamily: 'Nunito_900Black', 
     fontSize: 19, 
     color: '#1A1A1A',
-    letterSpacing: -0.5 // Premium durması için hafif daraltıldı
+    letterSpacing: -0.5 
   },
   missionSubTitle: { 
     fontFamily: 'Nunito_600SemiBold', 
@@ -223,23 +264,19 @@ const styles = StyleSheet.create({
   progressTrack: { flex: 1, height: 8, backgroundColor: '#F0F0F0', borderRadius: 4, overflow: 'hidden', marginRight: 10 },
   progressFill: { height: '100%', borderRadius: 4 },
   currentProgressText: { 
-    fontFamily: 'Nunito_900Black', // Sayılar net görünmeli
+    fontFamily: 'Nunito_900Black', 
     fontSize: 13, 
     color: '#FF00D6' 
   },
   giftWrapper: { alignItems: 'center', minWidth: 80 },
-  
-  /* 🚀 GRİ KUTU STİLİ */
   lockedGift: { alignItems: 'center', opacity: 0.6 },
-lockedText: { 
+  lockedText: { 
     fontFamily: 'Nunito_800ExtraBold', 
     fontSize: 10, 
     color: '#9CA3AF', 
     marginTop: 5, 
-    letterSpacing: 1.5 // Senior seviye boşluk
+    letterSpacing: 1.5 
   },
-  
-  /* 🚀 AKTİF KUTU STİLİ */
   activeGift: { width: 50, height: 50, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowColor: '#FF00D6', shadowOpacity: 0.4, shadowRadius: 10, elevation: 8 },
   openMeText: { 
     fontFamily: 'Nunito_900Black', 
@@ -248,10 +285,9 @@ lockedText: {
     marginTop: 8,
     textTransform: 'uppercase' 
   },
-/* MODAL TEMELLERİ */
   modalOverlay: { 
     flex: 1, 
-    backgroundColor: 'rgba(5, 0, 10, 0.97)', // Daha derin, koyu bir atmosfer
+    backgroundColor: 'rgba(5, 0, 10, 0.97)', 
     justifyContent: 'center', 
     alignItems: 'center' 
   },
@@ -268,8 +304,6 @@ lockedText: {
     height: 140, 
     opacity: 0.4 
   },
-
-  /* ÖDÜL SAHNESİ */
   lootMainStage: { alignItems: 'center' },
   rewardAuraCore: { 
     position: 'absolute', 
@@ -279,8 +313,6 @@ lockedText: {
     opacity: 0.35
   },
   auraCircle: { flex: 1, borderRadius: 140 },
-
-  /* PREMIUM KART TASARIMI */
   premiumObjectFrame: { 
     width: 170, 
     height: 230, 
@@ -304,8 +336,6 @@ lockedText: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10
   },
-
-  /* CAM BİLGİ PANELİ */
   glassInfoCard: { 
     marginTop: 55, 
     padding: 25, 
@@ -319,7 +349,7 @@ lockedText: {
  rarityTextPremium: { 
     fontFamily: 'Nunito_900Black', 
     fontSize: 12, 
-    letterSpacing: 5, // Nadirlik vurgusu için geniş boşluk
+    letterSpacing: 5, 
     marginBottom: 10,
     textTransform: 'uppercase'
   },
@@ -344,8 +374,6 @@ lockedText: {
     textAlign: 'center', 
     lineHeight: 24
   },
-
-  /* SENIOR BUTON TASARIMI */
   claimButton: { 
     marginTop: 45, 
     width: 210, 

@@ -5,24 +5,23 @@ import { Ionicons } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');
 
-// 🚀 GÜNCELLEME: joker1 Tekli Değişim, joker2 Deste Takası olarak yer değiştirdi.
 const JOKERS = [
   { 
-    id: 'joker1', 
+    id: 'joker_skip', // joker1 yerine joker_skip
     name: 'TEKLİ DEĞİŞİM', 
     desc: 'Beğenmediğin 1 kartı yenisiyle değiştir.', 
     logo: require('../../assets/joker1.png'), 
     color: '#FF8A00' 
   },
   { 
-    id: 'joker2', 
+    id: 'joker_double', // joker2 yerine joker_double
     name: 'DESTE TAKASI', 
     desc: 'Tüm elini çöpe at, taze 5 kart çek!', 
     logo: require('../../assets/joker2.png'), 
     color: '#FF69EB' 
   },
   { 
-    id: 'joker3', 
+    id: 'joker_freeze', // joker3 yerine joker_freeze
     name: 'BUZ SAATİ', 
     desc: 'Süreyi 5 saniye dondur, hamleni planla.', 
     logo: require('../../assets/joker3.png'), 
@@ -30,7 +29,7 @@ const JOKERS = [
   }
 ];
 
-export default function JokerModal({ visible, onClose, onUseJoker, inventory }) {
+export default function JokerModal({ visible, onClose, onUseJoker, inventory, selectedCard }) {
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef(JOKERS.map(() => new Animated.Value(0))).current;
@@ -53,6 +52,8 @@ export default function JokerModal({ visible, onClose, onUseJoker, inventory }) 
   }, [visible]);
 
   if (!visible) return null;
+
+  
 
   return (
     <View style={styles.absoluteOverlay}>
@@ -96,9 +97,12 @@ export default function JokerModal({ visible, onClose, onUseJoker, inventory }) 
           </View>
 
           <View style={styles.grid}>
-            {JOKERS.map((joker, index) => {
-              const currentCount = inventory ? (inventory[joker.id] || 0) : 0;
-              const isLocked = currentCount <= 0;
+           {JOKERS.map((joker, index) => {
+            const currentCount = inventory ? (inventory[joker.id] || 0) : 0;
+            const isLocked = currentCount <= 0;
+            
+            // 🚀 YENİ KONTROL: Tekli değişim seçili ama kart seçilmemişse butonu gri yap
+            const isActionDisabled = isLocked || (joker.id === 'joker_skip' && !selectedCard);
               const cardOpacity = cardAnims[index];
               const cardScale = cardAnims[index].interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] });
 

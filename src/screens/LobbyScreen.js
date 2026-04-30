@@ -4,6 +4,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StackActions } from '@react-navigation/native';
+import { Audio } from 'expo-av'; // 🔥 SES KÜTÜPHANESİ EKLENDİ
 
 // 🔥 FIREBASE BAĞLANTILARI (auth eklendi)
 import { database, auth } from '../services/firebase';
@@ -11,6 +12,28 @@ import { ref as dbRef, set, onValue, update, remove } from 'firebase/database';
 
 const { width } = Dimensions.get('window');
 const MAX_PLAYERS = 4;
+
+// 🔊 SES ÇALMA YARDIMCI FONKSİYONU (Düzeltildi)
+const playSound = async (type) => {
+  const soundMap = {
+    click: require('../../assets/sounds/click.mp3'),
+    ready: require('../../assets/sounds/ready.mp3'),
+    join: require('../../assets/sounds/join.mp3'),
+    start: require('../../assets/sounds/start.mp3'),
+    error: require('../../assets/sounds/error.mp3'),
+  };
+
+  try {
+    const { sound } = await Audio.Sound.createAsync(soundMap[type]);
+    await sound.playAsync();
+    // Bellek sızıntısını önlemek için ses bitince temizle
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.didJustFinish) sound.unloadAsync();
+    });
+  } catch (error) {
+    console.log("Ses çalınamadı:", error);
+  }
+};
 
 export default function LobbyScreen({ route, navigation }) {
   const isHost = route.params?.isHost ?? false;
@@ -20,7 +43,7 @@ export default function LobbyScreen({ route, navigation }) {
 
   const [roomId, setRoomId] = useState(initialRoomId);
   
-  // 🚀 İŞTE DÜZELTME BURADA: "Sinem" silindi, doğrudan hesaba (auth) bağlandı!
+  // 🚀 İŞTE DÜZELTME BURADA: doğrudan hesaba (auth) bağlandı!
   const [myName, setMyName] = useState(
     route.params?.myName || auth.currentUser?.displayName || 'Oyuncu'
   );
@@ -31,6 +54,9 @@ export default function LobbyScreen({ route, navigation }) {
   
   const [userId] = useState("USER_" + Math.random().toString(36).substring(7));
   const hasNavigated = useRef(false);
+  
+  // 🔊 Odaya yeni biri katıldığını anlamak için önceki sayıyı tutuyoruz
+  const prevPlayerCount = useRef(0);
 
   useEffect(() => {
     let currentRoomId = initialRoomId;
@@ -65,6 +91,13 @@ export default function LobbyScreen({ route, navigation }) {
               id: key,
               ...data.players[key]
             }));
+            
+            // 🔊 YENİ OYUNCU KATILDIĞINDA SES ÇAL
+            if (playersArray.length > prevPlayerCount.current && prevPlayerCount.current > 0) {
+              playSound('join');
+            }
+            prevPlayerCount.current = playersArray.length; // Güncel sayıyı kaydet
+
             setPlayers(playersArray);
           }
 
@@ -112,26 +145,45 @@ export default function LobbyScreen({ route, navigation }) {
     if (!roomId) return;
     const newReadyState = !isReady;
     setIsReady(newReadyState);
+    
+    // 🔊 HAZIR DURUMUNA GÖRE SES ÇAL
+    playSound(newReadyState ? 'ready' : 'click');
+
     update(dbRef(database, `rooms/${roomId}/players/${userId}`), { isReady: newReadyState });
   };
 
   const startGame = () => {
     if (!roomId) return;
     if (players.length < 2) {
+      playSound('error'); // 🔊 HATA SESİ
       Alert.alert("Yetersiz Oyuncu", "Oyunu başlatmak için en az 2 oyuncu gerekiyor.");
       return;
     }
     const allReady = players.every(p => p.isReady);
     if (!allReady) {
+      playSound('error'); // 🔊 HATA SESİ
       Alert.alert("Bekle!", "Tüm oyuncuların hazır olması gerekiyor.");
       return;
     }
+    
+    playSound('start'); // 🔊 OYUN BAŞLAMA SESİ
     update(dbRef(database, `rooms/${roomId}`), { status: 'playing' });
   };
 
   const onShare = async () => {
+    playSound('click'); // 🔊 PAYLAŞ BUTONUNA BASINCA SES
     try { await Share.share({ message: `Meme Kapışması odama gel! Kodun: ${roomId}` }); } 
     catch (error) { console.log(error.message); }
+  };
+
+  const handleBackPress = () => {
+    playSound('click'); // 🔊 GERİ BUTONU SESİ
+    navigation.goBack();
+  };
+
+  const handleAvatarEdit = () => {
+    playSound('click'); // 🔊 AVATAR DÜZENLEME SESİ
+    navigation.navigate('AvatarScreen', { nextScreen: 'LobbyScreen', myName });
   };
 
   const renderSlots = () => {
@@ -167,7 +219,7 @@ export default function LobbyScreen({ route, navigation }) {
     <View style={styles.container}>
       <LinearGradient colors={['#FF69EB', '#FFA3A5']} style={styles.headerBackground}>
         <View style={styles.headerNav}>
-           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+           <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
              <Ionicons name="chevron-back" size={24} color="white" />
            </TouchableOpacity>
            <Text style={styles.headerTitle}>OYUN LOBİSİ</Text>
@@ -175,7 +227,7 @@ export default function LobbyScreen({ route, navigation }) {
         </View>
 
         <View style={styles.profileSection}>
-          <TouchableOpacity activeOpacity={0.8} style={styles.avatarWrapper} onPress={() => navigation.navigate('AvatarScreen', { nextScreen: 'LobbyScreen', myName })}>
+          <TouchableOpacity activeOpacity={0.8} style={styles.avatarWrapper} onPress={handleAvatarEdit}>
             <Image source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${myAvatarSeed}&backgroundColor=ffffff` }} style={styles.avatarImage} />
             <View style={styles.editIconContainer}><MaterialCommunityIcons name="pencil" size={16} color="white" /></View>
           </TouchableOpacity>
