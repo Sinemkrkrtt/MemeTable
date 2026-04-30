@@ -22,23 +22,29 @@ import RandomMatchScreen from './src/screens/RandomMatchScreen';
 const Stack = createStackNavigator();
 export default function App() {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true); // Uygulama açılırken kontrol süresi
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (authenticatedUser) => {
       setUser(authenticatedUser);
-      setLoading(false); // Kontrol bitti
+      setLoading(false);
     });
     return unsubscribe;
   }, []);
 
-  if (loading) return null; // İstersen buraya bir Splash Screen veya Loading koyabilirsin
+  if (loading) return null; // Burası okey
 
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator 
+        initialRouteName={user ? "Home" : "AuthScreen"} // Giriş durumuna göre başlangıç noktasını netleştir
+        screenOptions={{ 
+          headerShown: false,
+          animationEnabled: true, // Geçişler daha yumuşak olur
+          gestureEnabled: false    // Oyun sırasında yanlışlıkla geri kaydırmayı önler
+        }}
+      >
         {user ? (
-          // ✅ KULLANICI GİRİŞ YAPMIŞSA BU GRUP ÇALIŞIR
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="MarketScreen" component={MarketScreen} />

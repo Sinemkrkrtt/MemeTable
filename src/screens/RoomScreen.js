@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { Ionicons,Entypo } from '@expo/vector-icons';
+import { Ionicons, Entypo } from '@expo/vector-icons';
 import { OFFICIAL_MEMES } from '../memeData';
 import { styles } from './RoomScreenStyles';
 import ScoreScreen from './scoreScreen';
@@ -16,7 +16,6 @@ import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-
 
 const hashStr = (str) => {
   let h = 0;
@@ -59,6 +58,7 @@ const Snowflake = ({ delay, left, size }) => {
     }}>❄️</Animated.Text>
   );
 };
+
 export default function RoomScreen({ navigation, route }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -99,15 +99,13 @@ export default function RoomScreen({ navigation, route }) {
   const tickSoundRef = useRef(null); 
   const playTickSoundRef = useRef(null); 
 
-  const highlightAnim = useRef(new Animated.Value(0)).current; // Parlama efekti için
-const [highlightedCardId, setHighlightedCardId] = useState(null); // Hangi kart parlayacak?
+  const highlightAnim = useRef(new Animated.Value(0)).current; 
+  const [highlightedCardId, setHighlightedCardId] = useState(null); 
 
+  const [userStats, setUserStats] = useState({ coins: 0, diamonds: 0 });
+  const [isFullInventoryVisible, setIsFullInventoryVisible] = useState(false); 
 
-const [userStats, setUserStats] = useState({ coins: 0, diamonds: 0 });
-const [isFullInventoryVisible, setIsFullInventoryVisible] = useState(false); // Büyük modal için
-
-const [isMuted, setIsMuted] = useState(false);
-
+  const [isMuted, setIsMuted] = useState(false);
 
   useEffect(() => {
     async function loadTimerSounds() {
@@ -184,27 +182,26 @@ const [isMuted, setIsMuted] = useState(false);
     setupAudio();
     
     let unsubscribeUser = () => {};
-  const user = auth.currentUser;
-  if (user) {
-    const userRef = doc(db, 'users', user.uid);
-    unsubscribeUser = onSnapshot(userRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setJokerInventory({
-          joker_skip: data.joker_skip || 0,
-          joker_double: data.joker_double || 0,
-          joker_freeze: data.joker_freeze || 0
-        });
-        // 🚀 YENİ: Coin ve Elmas bilgisini alıyoruz
-        setUserStats({
-          coins: data.coins || 0,
-          diamonds: data.diamonds || 0
-        });
-      }
-    });
-  }
-  return () => unsubscribeUser();
-}, []);
+    const user = auth.currentUser;
+    if (user) {
+      const userRef = doc(db, 'users', user.uid);
+      unsubscribeUser = onSnapshot(userRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setJokerInventory({
+            joker_skip: data.joker_skip || 0,
+            joker_double: data.joker_double || 0,
+            joker_freeze: data.joker_freeze || 0
+          });
+          setUserStats({
+            coins: data.coins || 0,
+            diamonds: data.diamonds || 0
+          });
+        }
+      });
+    }
+    return () => unsubscribeUser();
+  }, []);
 
   useEffect(() => {
     const connectedRef = ref(database, ".info/connected");
@@ -324,17 +321,15 @@ const [isMuted, setIsMuted] = useState(false);
 
     if (timeLeft > 0 && activePhases.includes(phase) && !isTimeFrozen) { 
       
-      // 🚀 DÜZELTME: Sadece 3. saniyede BİR KERE başlat
       if (phase === 'PLAYING' && timeLeft === 3 && tickSoundRef.current) {
         tickSoundRef.current.playFromPositionAsync(0);
       }
 
       timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
       
-    } else if (timeLeft === 0 && activePhases.includes(phase)) {
+   } else if (timeLeft === 0 && activePhases.includes(phase)) {
       timeLeftAnim.setValue(1);
       
-      // 🚀 DÜZELTME: Süre 0 olduğunda sesi ZORLA DURDUR
       if (tickSoundRef.current) {
         tickSoundRef.current.stopAsync();
       }
@@ -345,10 +340,14 @@ const [isMuted, setIsMuted] = useState(false);
       } 
       else if (phase === 'PLAYING') {
         if (!stateRefs.current.hasPlayed && stateRefs.current.myHand.length > 0) {
-          handlePlayCard(stateRefs.current.myHand[0].id); 
+          const handNow = [...stateRefs.current.myHand]; 
+          const randomIndex = Math.floor(Math.random() * handNow.length);
+          const randomCard = handNow[randomIndex]; 
+          
+          handlePlayCard(randomCard.id); 
         }
         setPhase('WAITING_CARDS'); 
-      } 
+      }
       else if (phase === 'VOTING') {
         if (!stateRefs.current.votedCardId && stateRefs.current.playedCards.length > 0) {
           const opponentCards = stateRefs.current.playedCards.filter(c => !c.isMine);
@@ -363,112 +362,181 @@ const [isMuted, setIsMuted] = useState(false);
     return () => clearTimeout(timer);
   }, [timeLeft, phase, isTimeFrozen]);
 
+  
+// 🚀 DÜZELTME: Kart Atma Aşamasında AFK Olanları Host Üzerinden Oynatma
   useEffect(() => {
     if (phase === 'WAITING_CARDS') {
       const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...');
       const allPlayed = actualPlayers.length > 0 && actualPlayers.every(p => p.playedCard);
-      const timeout = setTimeout(() => moveToVotingPhase(), 3000); 
+      
       if (allPlayed) {
-        clearTimeout(timeout);
         moveToVotingPhase();
-      }
-      return () => clearTimeout(timeout);
-    }
-  }, [phase, players]);
+      } else {
+        const hostTimeout = setTimeout(() => {
+          if (amIHost) {
+            actualPlayers.forEach(p => {
+              if (!p.playedCard) {
+                // 🚀 DÜZELTME: Her defasında desteden yepyeni bir kart çek ve ID'sini benzersiz yap
+                const randomMeme = OFFICIAL_MEMES[Math.floor(Math.random() * OFFICIAL_MEMES.length)];
+                const autoCard = { ...randomMeme, id: Math.random().toString() };
+                
+                update(ref(database, `rooms/${roomId}/players/${p.id}`), { playedCard: autoCard });
+              }
+            });
+          }
+        }, 2500);
 
+        const forceTimeout = setTimeout(() => {
+          moveToVotingPhase();
+        }, 4000);
+
+        return () => {
+          clearTimeout(hostTimeout);
+          clearTimeout(forceTimeout);
+        };
+      }
+    }
+  }, [phase, players, amIHost, roomId]);
+
+  // 🚀 DÜZELTME: Oylama Aşamasında AFK Olanları Host Üzerinden Oynatma
   useEffect(() => {
     if (phase === 'WAITING_VOTES') {
       const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...');
       const allVoted = actualPlayers.length > 0 && actualPlayers.every(p => p.votedFor);
-      const timeout = setTimeout(() => calculateResults(), 3000);
+      
       if (allVoted) {
-        clearTimeout(timeout);
         calculateResults();
+      } else {
+        // Eğer oylamayan kaldıysa Host onlar adına rastgele oy atar.
+        const hostTimeout = setTimeout(() => {
+          if (amIHost) {
+            actualPlayers.forEach(p => {
+              if (!p.votedFor && stateRefs.current.playedCards.length > 0) {
+                const opponentCards = stateRefs.current.playedCards.filter(c => c.owner !== p.name);
+                const pool = opponentCards.length > 0 ? opponentCards : stateRefs.current.playedCards;
+                const randomOpponent = pool[Math.floor(Math.random() * pool.length)];
+                if (randomOpponent) {
+                  update(ref(database, `rooms/${roomId}/players/${p.id}`), { votedFor: randomOpponent.id });
+                }
+              }
+            });
+          }
+        }, 2500);
+
+        const forceTimeout = setTimeout(() => {
+          calculateResults();
+        }, 4000);
+
+        return () => {
+          clearTimeout(hostTimeout);
+          clearTimeout(forceTimeout);
+        };
       }
-      return () => clearTimeout(timeout);
     }
-  }, [phase, players]);
+  }, [phase, players, amIHost, roomId]);
+
+  useEffect(() => {
+    const toggleOrientation = async () => {
+      try {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      } catch (error) {
+        console.log("Oryantasyon kilitlenemedi:", error);
+      }
+    };
+
+    toggleOrientation();
+
+    return () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    });
+
+    const unsubscribeBlur = navigation.addListener('blur', () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeBlur();
+    };
+  }, [navigation]);
 
   const handleUseJoker = async (jokerId) => {
-  // 1. KONTROL: Tekli değişimde kart seçili mi?
-  if (jokerId === 'joker_skip' && !selectedCard) {
-    alert("Önce değiştirmek istediğin kartı seç!");
-    return; 
-  }
+    if (jokerId === 'joker_skip' && !selectedCard) {
+      alert("Önce değiştirmek istediğin kartı seç!");
+      return; 
+    }
 
-  if (jokerInventory[jokerId] <= 0) return; 
+    if (jokerInventory[jokerId] <= 0) return; 
 
-  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-  // Veritabanı düşümü
-  const user = auth.currentUser;
-  if (user) {
-    const userRef = doc(db, 'users', user.uid);
-    await updateDoc(userRef, { [jokerId]: increment(-1) });
-  }
+    const user = auth.currentUser;
+    if (user) {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, { [jokerId]: increment(-1) });
+    }
 
-  switch (jokerId) {
-    case 'joker_skip':
-      playSound('card_swap');
-      const newCardId = Math.random().toString();
-      const randomCard = OFFICIAL_MEMES[Math.floor(Math.random() * OFFICIAL_MEMES.length)];
-      
-      setMyHand(prev => prev.map(c => c.id === selectedCard ? {...randomCard, id: newCardId} : c));
-      
-      // PARLAMA EFEKTİ: Yeni kartın ID'sini setle ve animasyonu başlat
-      setHighlightedCardId(newCardId);
-      triggerHighlight();
-      setSelectedCard(null);
-      break;
+    switch (jokerId) {
+      case 'joker_skip':
+        playSound('card_swap');
+        const newCardId = Math.random().toString();
+        const randomCard = OFFICIAL_MEMES[Math.floor(Math.random() * OFFICIAL_MEMES.length)];
+        
+        setMyHand(prev => prev.map(c => c.id === selectedCard ? {...randomCard, id: newCardId} : c));
+        
+        setHighlightedCardId(newCardId);
+        triggerHighlight();
+        setSelectedCard(null);
+        break;
 
-    case 'joker_double':
-      playSound('card_swap');
-      const currentHandSize = myHand.length;
-      const newHand = [...OFFICIAL_MEMES]
-        .sort(() => Math.random() - 0.5)
-        .slice(0, currentHandSize)
-        .map(c => ({ ...c, id: Math.random().toString() }));
-      
-      setMyHand(newHand);
-      // Tüm deste yenilendiği için hepsini hafifçe parlatabiliriz
-      setHighlightedCardId('ALL');
-      triggerHighlight();
-      break;
+      case 'joker_double':
+        playSound('card_swap');
+        const currentHandSize = myHand.length;
+        const newHand = [...OFFICIAL_MEMES]
+          .sort(() => Math.random() - 0.5)
+          .slice(0, currentHandSize)
+          .map(c => ({ ...c, id: Math.random().toString() }));
+        
+        setMyHand(newHand);
+        setHighlightedCardId('ALL');
+        triggerHighlight();
+        break;
 
-   case 'joker_freeze':
-      playSound('iced_magic');
-      
-      // 1. Tüm oda için süreyi dondur
-      update(ref(database, `rooms/${roomId}`), { isGlobalFrozen: true });
-      
-      // 2. Jokeri kim bastıysa, 5 saniye sonra kilidi o açsın (amIHost sildik)
-      setTimeout(() => {
-        update(ref(database, `rooms/${roomId}`), { isGlobalFrozen: false });
-      }, 5000);
-      
-      break;
-  }
-  setIsJokerMenuVisible(false);
-};
+     case 'joker_freeze':
+        playSound('iced_magic');
+        update(ref(database, `rooms/${roomId}`), { isGlobalFrozen: true });
+        setTimeout(() => {
+          update(ref(database, `rooms/${roomId}`), { isGlobalFrozen: false });
+        }, 5000);
+        break;
+    }
+    setIsJokerMenuVisible(false);
+  };
 
-// Parlama animasyonu fonksiyonu
-const triggerHighlight = () => {
-  highlightAnim.setValue(0);
-  Animated.sequence([
-    Animated.timing(highlightAnim, { toValue: 1, duration: 400, useNativeDriver: false }),
-    Animated.timing(highlightAnim, { toValue: 0, duration: 800, useNativeDriver: false }),
-  ]).start(() => setHighlightedCardId(null));
-};
-
+  const triggerHighlight = () => {
+    highlightAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(highlightAnim, { toValue: 1, duration: 400, useNativeDriver: false }),
+      Animated.timing(highlightAnim, { toValue: 0, duration: 800, useNativeDriver: false }),
+    ]).start(() => setHighlightedCardId(null));
+  };
 
   const handlePlayCard = (autoCardId = null) => {
-    const targetCardId = typeof autoCardId === 'string' ? autoCardId : selectedCard;
-    if (targetCardId) {
-      
+      const isEvent = autoCardId && typeof autoCardId === 'object' && autoCardId.nativeEvent;
+      const explicitCardId = (!isEvent && autoCardId !== null && autoCardId !== undefined) ? autoCardId : null;
+      const targetCardId = explicitCardId !== null ? explicitCardId : selectedCard;
+
+      if (stateRefs.current.hasPlayed || !targetCardId) return; 
+
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       playSound('swoosh');
 
-      // 🚀 DÜZELTME: Kartı attığı an süreyi/sesi durdurur
       if (tickSoundRef.current) {
         tickSoundRef.current.stopAsync();
       }
@@ -485,177 +553,193 @@ const triggerHighlight = () => {
       if (me?.id) {
         update(ref(database, `rooms/${roomId}/players/${me.id}`), { playedCard: cardToPlay });
       }
-    }
-  };
+    };
 
   const moveToVotingPhase = () => {
-    const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...' && p.playedCard);
-    const tableCards = actualPlayers.map(p => ({
-        ...p.playedCard,
-        isMine: p.name?.trim() === cleanMyName,
-        owner: p.name,
-        id: p.playedCard.id + '_' + p.name 
-    }));
-    setPlayedCards(tableCards.sort(() => 0.5 - Math.random()));
-    setPhase('VOTING');
-    setTimeLeft(10);
-    Animated.sequence([
-      Animated.timing(announcementAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-      Animated.delay(1200),
-      Animated.timing(announcementAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
-    ]).start();
-  };
+      const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...' && p.playedCard);
+      const tableCards = actualPlayers.map(p => ({
+          ...p.playedCard,
+          isMine: p.name?.trim() === cleanMyName,
+          owner: p.name,
+          id: p.playedCard.id + '_' + p.name 
+      }));
+
+      setPlayedCards(tableCards.sort((a, b) => a.id.localeCompare(b.id)));
+      
+      setPhase('VOTING');
+      setTimeLeft(10);
+      Animated.sequence([
+        Animated.timing(announcementAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+        Animated.delay(1200),
+        Animated.timing(announcementAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
+      ]).start();
+    };
 
   const handleVote = (cardId) => {
-    if (stateRefs.current.votedCardId || phase !== 'VOTING') return; 
-    
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      if (stateRefs.current.votedCardId || phase !== 'VOTING') return; 
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    setVotedCardId(cardId);
-    if (me?.id) {
-        update(ref(database, `rooms/${roomId}/players/${me.id}`), { votedFor: cardId });
-    }
-  };
+      setVotedCardId(cardId);
+      if (me?.id) {
+          update(ref(database, `rooms/${roomId}/players/${me.id}`), { votedFor: cardId });
+      }
+    };
 
   const calculateResults = () => {
-    setPhase('ROUND_ENDED');
-    const voteCounts = {};
-    players.forEach(p => {
-        if (p.votedFor) { voteCounts[p.votedFor] = (voteCounts[p.votedFor] || 0) + 1; }
-    });
+      setPhase('ROUND_ENDED');
+      const voteCounts = {};
+      players.forEach(p => {
+          if (p.votedFor) { voteCounts[p.votedFor] = (voteCounts[p.votedFor] || 0) + 1; }
+      });
 
-    if (Object.keys(voteCounts).length === 0 && stateRefs.current.playedCards.length > 0) {
-        const sortedCards = [...stateRefs.current.playedCards].sort((a, b) => a.id.localeCompare(b.id));
-        voteCounts[sortedCards[0].id] = 1;
-    }
-
-    const roundPoints = {};
-    stateRefs.current.playedCards.forEach(card => {
-        const votes = voteCounts[card.id] || 0;
-        if (votes > 0) {
-            roundPoints[card.owner] = (roundPoints[card.owner] || 0) + votes;
-        }
-    });
-
-    setScores(prev => {
-        const newScores = { ...prev };
-        Object.keys(roundPoints).forEach(owner => {
-            newScores[owner] = (newScores[owner] || 0) + roundPoints[owner];
-        });
-        return newScores;
-    });
-
-    let maxVotes = 0;
-    let winners = [];
-    Object.keys(roundPoints).forEach(owner => {
-        if (roundPoints[owner] > maxVotes) {
-            maxVotes = roundPoints[owner];
-            winners = [owner];
-        } else if (roundPoints[owner] === maxVotes && maxVotes > 0) {
-            winners.push(owner);
-        }
-    });
-
-    let bannerText = "HESAPLANIYOR...";
-    let isMeWinner = false;
-
-    if (winners.length === 1) {
-        if (winners[0]?.trim() === cleanMyName) {
-            bannerText = "RAUNDU KAZANDIN!";
-            isMeWinner = true;
-        } else {
-            bannerText = `${winners[0].toUpperCase()} KAZANDI!`;
-        }
-    } else if (winners.length > 1) {
-        if (winners.includes(cleanMyName)) {
-            bannerText = "BERABERE! (SEN DE KAZANDIN)";
-            isMeWinner = true;
-        } else {
-            bannerText = "RAUND BERABERE!"; 
-        }
-    }
-
-    setWinnerName(bannerText);
-
-    if (isMeWinner) {
-      playSound('win');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-      const user = auth.currentUser;
-      if (user) { 
-        const userRef = doc(db, 'users', user.uid);
-        updateDoc(userRef, { 
-          wonHearts: increment(1),      
-          coins: increment(100),       
-          diamonds: increment(1),      
-          isBoxOpened: false           
-        }).catch(e => console.log("Veri güncellenirken hata:", e)); 
+      if (Object.keys(voteCounts).length === 0 && stateRefs.current.playedCards.length > 0) {
+          const sortedCards = [...stateRefs.current.playedCards].sort((a, b) => a.id.localeCompare(b.id));
+          voteCounts[sortedCards[0].id] = 1;
       }
-    } else {
-      playSound('fail');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    }
 
-    setRoundEnded(true);
+      const roundPoints = {};
+      stateRefs.current.playedCards.forEach(card => {
+          const votes = voteCounts[card.id] || 0;
+          if (votes > 0) {
+              roundPoints[card.owner] = (roundPoints[card.owner] || 0) + votes;
+          }
+      });
 
-    Animated.spring(announcementAnim, { toValue: 1, useNativeDriver: true }).start();
+      setScores(prev => {
+          const newScores = { ...prev };
+          Object.keys(roundPoints).forEach(owner => {
+              newScores[owner] = (newScores[owner] || 0) + roundPoints[owner];
+          });
+          return newScores;
+      });
 
-    if (stateRefs.current.myHand.length > 0) {
-      setTimeout(() => {
-        if (amIHost) {
-          handleHostNewRound();
+      let maxVotes = 0;
+      let winners = [];
+      Object.keys(roundPoints).forEach(owner => {
+          if (roundPoints[owner] > maxVotes) {
+              maxVotes = roundPoints[owner];
+              winners = [owner];
+          } else if (roundPoints[owner] === maxVotes && maxVotes > 0) {
+              winners.push(owner);
+          }
+      });
+
+      let bannerText = "HESAPLANIYOR...";
+      let isMeWinner = false;
+
+      if (winners.length === 1) {
+          if (winners[0]?.trim() === cleanMyName) {
+              bannerText = "RAUNDU KAZANDIN!";
+              isMeWinner = true;
+          } else {
+              bannerText = `${winners[0].toUpperCase()} KAZANDI!`;
+          }
+      } else if (winners.length > 1) {
+          if (winners.includes(cleanMyName)) {
+              bannerText = "BERABERE! (SEN DE KAZANDIN)";
+              isMeWinner = true;
+          } else {
+              bannerText = "RAUND BERABERE!"; 
+          }
+      }
+
+      setWinnerName(bannerText);
+
+      if (isMeWinner) {
+        playSound('win');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+        const user = auth.currentUser;
+        if (user) { 
+          const userRef = doc(db, 'users', user.uid);
+          updateDoc(userRef, { 
+            wonHearts: increment(1),      
+            coins: increment(100),       
+            diamonds: increment(1),      
+            isBoxOpened: false           
+          }).catch(e => console.log("Veri güncellenirken hata:", e)); 
         }
-      }, 4000); 
-    }
-  };
+      } else {
+        playSound('fail');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+
+      setRoundEnded(true);
+
+      Animated.spring(announcementAnim, { toValue: 1, useNativeDriver: true }).start();
+
+      if (stateRefs.current.myHand.length > 0) {
+        setTimeout(() => {
+          if (amIHost) {
+            handleHostNewRound();
+          }
+        }, 4000); 
+      }
+    };
 
   const handleHostNewRound = () => {
     if (amIHost && roomId) {
       const nextRound = currentRoundRef.current + 1;
       const randomPrompt = SITUATION_PROMPTS[Math.floor(Math.random() * SITUATION_PROMPTS.length)];
       
-      update(ref(database, `rooms/${roomId}`), { 
+      // 🚀 DÜZELTME: Yeni raunt başlarken Host herkesin masasını ve oylarını tertemiz yapar
+      const updates = { 
         round: nextRound,
         currentPrompt: randomPrompt 
+      };
+
+      players.forEach(p => {
+        if (p.id) {
+          updates[`players/${p.id}/playedCard`] = null;
+          updates[`players/${p.id}/votedFor`] = null;
+        }
       });
+
+      update(ref(database, `rooms/${roomId}`), updates);
     }
   };
-
   const startNextRound = () => {
-    if (me?.id) { update(ref(database, `rooms/${roomId}/players/${me.id}`), { playedCard: null, votedFor: null }); }
-    
-    if (stateRefs.current.myHand.length === 0) {
-      setScores(prevScores => {
-        const resetScores = {};
-        Object.keys(prevScores).forEach(name => {
-          resetScores[name] = 0;
+      if (me?.id) { 
+        update(ref(database, `rooms/${roomId}/players/${me.id}`), { playedCard: null, votedFor: null }); 
+      }
+      
+      if (stateRefs.current.myHand.length === 0) {
+        setScores(prevScores => {
+          const resetScores = {};
+          Object.keys(prevScores).forEach(name => {
+            resetScores[name] = 0;
+          });
+          return resetScores;
         });
-        return resetScores;
-      });
 
-      const sortedPlayers = [...players].sort((a, b) => a.name.localeCompare(b.name));
-      const myIdx = sortedPlayers.findIndex(p => p.name?.trim() === cleanMyName);
-      const safeIdx = myIdx !== -1 ? myIdx : 0;
+        const sortedPlayers = [...players].sort((a, b) => a.name.localeCompare(b.name));
+        const myIdx = sortedPlayers.findIndex(p => p.name?.trim() === cleanMyName);
+        const safeIdx = myIdx !== -1 ? myIdx : 0;
+        
+        const seed = hashStr(roomId || 'default') + currentRoundRef.current;
+        const rand = mulberry32(seed);
+        const sharedDeck = [...OFFICIAL_MEMES].sort(() => rand() - 0.5);
+        
+        const startIdx = (safeIdx * 5) % Math.max(1, sharedDeck.length - 5);
+        setMyHand(sharedDeck.slice(startIdx, startIdx + 5));
+      }
       
-      const seed = hashStr(roomId || 'default') + currentRoundRef.current;
-      const rand = mulberry32(seed);
-      const sharedDeck = [...OFFICIAL_MEMES].sort(() => rand() - 0.5);
+     setHasPlayed(false);
+      setStagedCard(null);
+      setPlayedCards([]);
+      setVotedCardId(null);
+      setRoundEnded(false);
+      setWinnerName("");
+      setPhase('READING');
+      setTimeLeft(5);
       
-      const startIdx = (safeIdx * 5) % Math.max(1, sharedDeck.length - 5);
-      setMyHand(sharedDeck.slice(startIdx, startIdx + 5));
-    }
-    
-    setHasPlayed(false);
-    setStagedCard(null);
-    setPlayedCards([]);
-    setVotedCardId(null);
-    setRoundEnded(false);
-    setWinnerName("");
-    setPhase('READING');
-    setTimeLeft(5);
-    announcementAnim.setValue(0); popAnim.setValue(0); flipAnim.setValue(0);
-    Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
-  };
+      stateRefs.current.hasPlayed = false;
+      stateRefs.current.votedCardId = null;
+      stateRefs.current.playedCards = [];
+      
+      announcementAnim.setValue(0); popAnim.setValue(0); flipAnim.setValue(0);
+      Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
+    };
 
   const PlayerSlot = ({ name, positionStyle, avatarAnimal, badgeColor }) => (
     <View style={[styles.playerSlot, positionStyle]}>
@@ -669,8 +753,8 @@ const triggerHighlight = () => {
           source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${avatarAnimal}&backgroundColor=ffffff` }} 
           style={[styles.avatar, { borderColor: badgeColor, backgroundColor: '#FFF' }]} 
           contentFit="cover"
-          transition={250} // Avatar yüklendiğinde 250ms'lik zarif bir fade-in yapar
-          cachePolicy="memory-disk" // Hem RAM hem de disk üzerinde agresif önbellekleme sağlar
+          transition={250} 
+          cachePolicy="memory-disk" 
         />
         )}
         <View style={[styles.nameBadge, { backgroundColor: badgeColor }]}><Text style={styles.playerName}>{name}</Text></View>
@@ -689,389 +773,378 @@ const triggerHighlight = () => {
   const opponentPositions = [styles.topPlayer, styles.leftPlayer, styles.rightPlayer];
   const opponentColors = ["#E5E7EB", "#E5E7EB", "#E5E7EB"];
 
-
   const toggleSound = async () => {
-  try {
-    const newMutedState = !isMuted;
-    setIsMuted(newMutedState);
-    
-    // expo-av'nin ana ses motorunu açıp kapatır (True = Ses var, False = Ses yok)
-    await Audio.setIsEnabledAsync(!newMutedState);
-    
-    // Eğer o an çalan bir sayaç (tick) sesi varsa onu anında sustur/aç
-    if (newMutedState) {
-      if (tickSoundRef.current) await tickSoundRef.current.setVolumeAsync(0);
-      if (playTickSoundRef.current) await playTickSoundRef.current.setVolumeAsync(0);
-    } else {
-      if (tickSoundRef.current) await tickSoundRef.current.setVolumeAsync(1);
-      if (playTickSoundRef.current) await playTickSoundRef.current.setVolumeAsync(1);
+    try {
+      const newMutedState = !isMuted;
+      setIsMuted(newMutedState);
+      
+      await Audio.setIsEnabledAsync(!newMutedState);
+      
+      if (newMutedState) {
+        if (tickSoundRef.current) await tickSoundRef.current.setVolumeAsync(0);
+        if (playTickSoundRef.current) await playTickSoundRef.current.setVolumeAsync(0);
+      } else {
+        if (tickSoundRef.current) await tickSoundRef.current.setVolumeAsync(1);
+        if (playTickSoundRef.current) await playTickSoundRef.current.setVolumeAsync(1);
+      }
+    } catch (error) {
+      console.log("Ses durumu değiştirilirken hata oluştu:", error);
     }
-  } catch (error) {
-    console.log("Ses durumu değiştirilirken hata oluştu:", error);
-  }
-};
+  };
 
-  
-return (
-    <View style={styles.container}>
-      <StatusBar hidden />
-      <View style={styles.whiteBackground} />
-      <JokerModal 
-        visible={isFullInventoryVisible} 
-        onClose={() => setIsFullInventoryVisible(false)} 
-        onUseJoker={(id) => {
-          handleUseJoker(id);
-          setIsFullInventoryVisible(false); // Kullanınca menüyü kapat
-        }}
-        inventory={jokerInventory}
-        selectedCard={selectedCard}
-      />
-
-      {/* Menü açıkken boşluğa tıklayınca kapanmasını sağlayan şeffaf katman */}
-      {isJokerMenuVisible && (
-        <TouchableOpacity 
-          activeOpacity={1}
-          style={[StyleSheet.absoluteFillObject, { zIndex: 998 }]}
-          onPress={() => setIsJokerMenuVisible(false)}
+  return (
+      <View style={styles.container}>
+        <StatusBar hidden />
+        <View style={styles.whiteBackground} />
+        <JokerModal 
+          visible={isFullInventoryVisible} 
+          onClose={() => setIsFullInventoryVisible(false)} 
+          onUseJoker={(id) => {
+            handleUseJoker(id);
+            setIsFullInventoryVisible(false); 
+          }}
+          inventory={jokerInventory}
+          selectedCard={selectedCard}
         />
-      )}
 
-   
-          <View style={[
-            styles.topBarContainer, 
-            { 
-              zIndex: 50, 
-              marginLeft: Math.max(insets.left, 15) // 🚀 DÜZELTME: Çentik kadar (veya en az 15px) içeri it
-            }
-          ]}>
-        <LinearGradient 
-          colors={['rgba(255,255,255,0.95)', 'rgba(245,245,250,0.9)']} 
-          style={[styles.homeStylePill, { paddingHorizontal: 16, paddingVertical: 8 }]}
-        >
-          {/* Çıkış */}
+        {isJokerMenuVisible && (
           <TouchableOpacity 
-            activeOpacity={0.7} 
-            onPress={() => {
-              playSound('click');
-              // 🚀 DÜZELTME: Odadan çıkmadan önce kendini Firebase'den sil!
-              if (me?.id) {
-                remove(ref(database, `rooms/${roomId}/players/${me.id}`));
+            activeOpacity={1}
+            style={[StyleSheet.absoluteFillObject, { zIndex: 998 }]}
+            onPress={() => setIsJokerMenuVisible(false)}
+          />
+        )}
+
+            <View style={[
+              styles.topBarContainer, 
+              { 
+                zIndex: 50, 
+                marginLeft: Math.max(insets.left, 15) 
               }
-              navigation.replace('Home');
-            }}
+            ]}>
+          <LinearGradient 
+            colors={['rgba(255,255,255,0.95)', 'rgba(245,245,250,0.9)']} 
+            style={[styles.homeStylePill, { paddingHorizontal: 16, paddingVertical: 8 }]}
           >
-            <Ionicons 
-                  name="exit-outline" 
-                  size={22} 
-                  color="#FF4D00" 
-                  style={{ 
-                    textShadowColor: 'rgba(255, 59, 48, 0.5)', 
-                    textShadowRadius: 8,
-                    transform: [{ scaleX: -1 }] 
-                  }} 
-                />
-          </TouchableOpacity>
-
-          <View style={[styles.verticalDivider, { marginHorizontal: 12 }]} />
-
-         <TouchableOpacity activeOpacity={0.7} onPress={toggleSound}>
+            <TouchableOpacity 
+              activeOpacity={0.7} 
+              onPress={() => {
+                playSound('click');
+                if (me?.id) {
+                  remove(ref(database, `rooms/${roomId}/players/${me.id}`));
+                }
+                navigation.replace('Home');
+              }}
+            >
               <Ionicons 
-                name={isMuted ? "volume-mute" : "volume-high"} 
-                size={22} 
-                color={isMuted ? "#FF0404E8" : "#FFD500E8"} // Kapalıysa kırmızı, açıksa gri
-              />
+                    name="exit-outline" 
+                    size={22} 
+                    color="#FF4D00" 
+                    style={{ 
+                      textShadowColor: 'rgba(255, 59, 48, 0.5)', 
+                      textShadowRadius: 8,
+                      transform: [{ scaleX: -1 }] 
+                    }} 
+                  />
             </TouchableOpacity>
 
-          <View style={[styles.verticalDivider, { marginHorizontal: 12 }]} />
+            <View style={[styles.verticalDivider, { marginHorizontal: 12 }]} />
 
-          {/* Market / Envanter */}
-          <TouchableOpacity activeOpacity={0.7} onPress={() => setIsFullInventoryVisible(true)}>
-             <Ionicons name="cart" size={22} color='#FF00D6' style={{ textShadowColor: 'rgba(0, 229, 255, 0.5)', textShadowRadius: 8 }} />
-          </TouchableOpacity>
-        </LinearGradient>
-      </View>
+           <TouchableOpacity activeOpacity={0.7} onPress={toggleSound}>
+                <Ionicons 
+                  name={isMuted ? "volume-mute" : "volume-high"} 
+                  size={22} 
+                  color={isMuted ? "#FF0404E8" : "#FFD500E8"} 
+                />
+              </TouchableOpacity>
 
-     <View style={[
-  styles.hudWrapper, 
-  { paddingRight: Math.max(insets.right, 10) } // 🚀 SAĞ ÇENTİK KORUMASI
-]}>
-        <View style={styles.hudContainer}>
-          
-          <TouchableOpacity 
-            activeOpacity={0.7} 
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setIsJokerMenuVisible(!isJokerMenuVisible);
-            }}
-            style={{ marginBottom: isJokerMenuVisible ? 10 : 0 }} 
-          >
-             <Ionicons 
-               name={isJokerMenuVisible ? "close-circle" : "flash"} 
-               size={30} 
-               color="#FF00D6" 
-               style={styles.hudTitleIcon} 
-             />
-          </TouchableOpacity>
+            <View style={[styles.verticalDivider, { marginHorizontal: 12 }]} />
 
-          {isJokerMenuVisible && (
-            <View style={{ alignItems: 'center' }}>
-              
-              {/* Mevcut Jokerler */}
-              {[
-                { id: 'joker_skip', logo: require('../../assets/joker1.png'), color: '#FF69EB' },
-                { id: 'joker_double', logo: require('../../assets/joker2.png'), color: '#FF8A00' },
-                { id: 'joker_freeze', logo: require('../../assets/joker3.png'), color: '#00E5FF' }
-              ].map((joker, index) => { 
-                const currentCount = jokerInventory[joker.id] || 0; 
-                const isDepleted = currentCount <= 0;
-                return (
-                  <View key={joker.id || index} style={[styles.jokerIconWrapper, { marginVertical: 5 }]}> 
-                    <TouchableOpacity 
-                      activeOpacity={0.7} 
-                      disabled={isDepleted} 
-                      onPress={() => {
-                        handleUseJoker(joker.id);
-                      }} 
-                      style={[styles.jokerButton, { shadowColor: joker.color, opacity: isDepleted ? 0.3 : 1 }]}
-                    >
-                    <Image 
-                      source={joker.logo} 
-                      style={styles.jokerLogo} 
-                      contentFit="contain" 
-                      transition={200} // Küçük bir fade-in ile daha zarif bir geçiş sağlar
-                      priority="high" // Jokerler oyunun kritik araçları olduğu için öncelikli yüklensin
-                      cachePolicy="memory" // Yerel dosyalar için en hızlı erişim (RAM üzerinden)
-                    />
-                      {!isDepleted && (
-                        <View style={[styles.jokerBadge, { backgroundColor: joker.color }]}>
-                          <Text style={styles.jokerBadgeText}>{currentCount}</Text>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => setIsFullInventoryVisible(true)}>
+               <Ionicons name="cart" size={22} color='#FF00D6' style={{ textShadowColor: 'rgba(0, 229, 255, 0.5)', textShadowRadius: 8 }} />
+            </TouchableOpacity>
+          </LinearGradient>
+        </View>
+
+       <View style={[
+    styles.hudWrapper, 
+    { paddingRight: Math.max(insets.right, 10) } 
+  ]}>
+          <View style={styles.hudContainer}>
+            
+            <TouchableOpacity 
+              activeOpacity={0.7} 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setIsJokerMenuVisible(!isJokerMenuVisible);
+              }}
+              style={{ marginBottom: isJokerMenuVisible ? 10 : 0 }} 
+            >
+               <Ionicons 
+                 name={isJokerMenuVisible ? "close-circle" : "flash"} 
+                 size={30} 
+                 color="#FF00D6" 
+                 style={styles.hudTitleIcon} 
+               />
+            </TouchableOpacity>
+
+            {isJokerMenuVisible && (
+              <View style={{ alignItems: 'center' }}>
+                
+                {[
+                  { id: 'joker_skip', logo: require('../../assets/joker1.png'), color: '#FF69EB' },
+                  { id: 'joker_double', logo: require('../../assets/joker2.png'), color: '#FF8A00' },
+                  { id: 'joker_freeze', logo: require('../../assets/joker3.png'), color: '#00E5FF' }
+                ].map((joker, index) => { 
+                  const currentCount = jokerInventory[joker.id] || 0; 
+                  const isDepleted = currentCount <= 0;
+                  return (
+                    <View key={joker.id || index} style={[styles.jokerIconWrapper, { marginVertical: 5 }]}> 
+                      <TouchableOpacity 
+                        activeOpacity={0.7} 
+                        disabled={isDepleted} 
+                        onPress={() => {
+                          handleUseJoker(joker.id);
+                        }} 
+                        style={[styles.jokerButton, { shadowColor: joker.color, opacity: isDepleted ? 0.3 : 1 }]}
+                      >
+                      <Image 
+                        source={joker.logo} 
+                        style={styles.jokerLogo} 
+                        contentFit="contain" 
+                        transition={200} 
+                        priority="high" 
+                        cachePolicy="memory" 
+                      />
+                        {!isDepleted && (
+                          <View style={[styles.jokerBadge, { backgroundColor: joker.color }]}>
+                            <Text style={styles.jokerBadgeText}>{currentCount}</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        </View>
+        
+        <Animated.View pointerEvents="none" style={[styles.announcementBanner, { transform: [{ translateX: announcementAnim.interpolate({ inputRange: [0, 1], outputRange: [-width, 0] }) }] }]}>
+          <LinearGradient colors={['transparent', roundEnded ? 'rgba(255, 180, 130, 0.95)' : 'rgba(255, 105, 235, 0.95)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.bannerGradient}>
+            <Text 
+              style={[styles.announcementText, roundEnded && styles.announcementTextWinner]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {roundEnded ? winnerName : "EN İYİ MEME'İ SEÇ!"}
+            </Text>
+          </LinearGradient>
+        </Animated.View>
+
+        <View style={styles.tableContainer}>
+          <View style={styles.mainTableRim}>
+            <View style={styles.tableSurface}
+            >
+             <Image 
+              source={require('../../assets/roomTableLogo.png')} 
+              style={styles.roomTableLogo} 
+              contentFit="contain" 
+              priority="high" 
+              cachePolicy="memory" 
+              transition={500} 
+            />
+            </View>
+
+            <PlayerSlot 
+              name={`${me?.name || myName}: ${scores[me?.name || myName] || 0}`} 
+              positionStyle={styles.bottomPlayer} 
+              avatarAnimal={me?.avatar || myAvatarSeed} 
+              badgeColor="#FCA9D7" 
+            />
+            
+            {opponents.map((opp, idx) => (
+                <PlayerSlot 
+                  key={opp.id || idx} 
+                  name={opp.name === 'Bekleniyor...' ? opp.name : `${opp.name}: ${scores[opp.name] || 0}`} 
+                  positionStyle={opponentPositions[idx % 3]} 
+                  avatarAnimal={opp.avatar} 
+                  badgeColor={opp.name === 'Bekleniyor...' ? opponentColors[idx % 3] : ["#FDE58E", "#FBB0B2", "#FEC994"][idx % 3]} 
+                />
+            ))}
+
+            <View style={styles.centerArea}>
+              {phase === 'READING' && (
+                <Animated.View style={[styles.situationCardWrapper, { transform: [{ scale: popAnim }, { scale: cardScale }, { rotateY: cardRotate }] }]}>
+                  <View style={styles.premiumSituationCard}>
+                    <LinearGradient colors={['rgba(255,255,255,0.7)', 'rgba(255,255,255,0)']} style={styles.glossyHighlight} />
+                    <View style={styles.cardInnerContent}>
+                      <View style={styles.premiumHeaderCentered}>
+                        <View style={styles.moodBadge}>
+                          <Text style={[styles.moodLetter, { color: '#FF69EB' }]}>M</Text>
+                          <Text style={[styles.moodLetter, { color: '#FF86C8' }]}>O</Text>
+                          <Text style={[styles.moodLetter, { color: '#FF8001' }]}>O</Text>
+                          <Text style={[styles.moodLetter, { color: '#F53BDC' }]}>D</Text>
                         </View>
-                      )}
-                    </TouchableOpacity>
+                      </View>
+                      <View style={styles.premiumDivider} />
+                      <Text style={styles.premiumText}>{currentPrompt}</Text>
+                    </View>
                   </View>
+                </Animated.View>
+              )}
+
+              {(phase === 'PLAYING' || phase === 'WAITING_CARDS') && (
+                <View style={styles.proTimerContainer}>
+                  <View style={[styles.staticRing, isTimeFrozen && styles.staticRingFrozen]} />
+                  <Animated.View style={[
+                    styles.timerRing, 
+                    isTimeFrozen ? styles.timerRingFrozen : (timeLeft <= 3 && phase !== 'WAITING_CARDS' ? styles.timerRingDanger : styles.timerRingNormal),
+                    { transform: [{ rotate: rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }
+                  ]} />
+                  {isTimeFrozen && (
+                    <View style={styles.snowOverlay} pointerEvents="none">
+                       <Snowflake delay={0} left="25%" size={14} />
+                       <Snowflake delay={600} left="55%" size={10} />
+                    </View>
+                  )}
+                  <View style={[styles.modernTimerContent, isTimeFrozen && styles.modernTimerContentFrozen]}>
+                     <Text style={[
+                       styles.proTimerText, 
+                       timeLeft <= 3 && !isTimeFrozen && phase !== 'WAITING_CARDS' && styles.proTimerTextDanger,
+                       isTimeFrozen && styles.proTimerTextFrozen
+                     ]}>{phase === 'WAITING_CARDS' ? '...' : timeLeft}</Text>
+                  </View>
+                </View>
+              )}
+
+              {(phase === 'VOTING' || phase === 'WAITING_VOTES' || phase === 'ROUND_ENDED') && playedCards.length > 0 && (
+                <View style={styles.votingAreaPro}>
+                  {!roundEnded && (
+                    <View style={styles.proProgressBarContainer}>
+                      <Animated.View style={[
+                        styles.proProgressBar, 
+                        { 
+                          width: timeLeftAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+                          backgroundColor: timeLeftAnim.interpolate({ inputRange: [0, 0.2, 0.5, 1], outputRange: ['#FF3B30', '#FF9500', '#FFDC5E', '#FF69EB'] })
+                        }
+                      ]} />
+                    </View>
+                  )}
+                  <View style={styles.votingRowPro}>
+                    {playedCards.map((card, index) => { 
+                      const isVoted = votedCardId === card.id;
+                      return (
+                        <TouchableOpacity 
+                          key={card.id || `played_${index}`} 
+                          style={[styles.voteCardWrapper, isVoted && styles.votedCardStyle, card.isMine && styles.disabledVoteCard]} 
+                          disabled={card.isMine || votedCardId !== null || phase === 'WAITING_VOTES' || phase === 'ROUND_ENDED'} onPress={() => handleVote(card.id)} activeOpacity={0.8}
+                        >
+                         <Image 
+                            source={{ uri: card.url }} 
+                            style={styles.memeImage} 
+                            contentFit="cover" 
+                            transition={400} 
+                            priority="high" 
+                            cachePolicy="memory-disk" 
+                            placeholder={require('../../assets/placeholderAvatar.png')} 
+                        />
+                          {card.isMine && (
+                            <View style={styles.myCardOverlay}>
+                              <Ionicons name="lock-closed" size={16} color="white" />
+                              <Text style={styles.myCardText}>SENİN</Text>
+                            </View>
+                          )}
+                          {isVoted && (
+                            <View style={styles.votedBadge}>
+                              <Ionicons name="heart" size={20} color="#FF00D6" />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.bottomDeckWrapper}>
+          {!hasPlayed && (phase === 'READING' || phase === 'PLAYING') && (
+            <View style={[styles.handContainer, { width: width }]}>
+              {myHand.map((item, index) => { 
+                const rotation = (index - Math.floor(myHand.length / 2)) * 10; 
+                const isSelected = selectedCard === item.id;
+
+                const isThisCardHighlighted = highlightedCardId === item.id || highlightedCardId === 'ALL';
+                const borderGlow = highlightAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['rgba(255, 255, 255, 0)', 'rgba(0, 229, 255, 1)']
+                });
+                return (
+                  <TouchableOpacity 
+                    key={item.id || `hand_${index}`} 
+                    activeOpacity={1} 
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setSelectedCard(isSelected ? null : item.id);
+                    }} 
+                    style={[
+                      styles.deckCard, 
+                      { transform: [{ rotate: `${rotation}deg` }, { translateY: isSelected ? -30 : 0 }, { scale: isSelected ? 1.1 : 1 }], 
+                        zIndex: isSelected ? 100 : index, 
+                        left: (width / 2) - 55 + (index - Math.floor(myHand.length / 2)) * 50 }
+                    ]}
+                  >
+                   <Animated.View style={[
+                        styles.deckCardInner, 
+                        isThisCardHighlighted && {
+                          shadowColor: '#00E5FF',
+                          shadowOpacity: highlightAnim,
+                          shadowRadius: 15,
+                          borderColor: borderGlow,
+                          borderWidth: 2
+                        }
+                                        ]}>
+                      <Image 
+                          source={{ uri: item.url }} 
+                          style={styles.memeImage} 
+                          contentFit="cover" 
+                          transition={400} 
+                          priority="high" 
+                          cachePolicy="memory-disk" 
+                      />
+      </Animated.View>
+                    {isSelected && <View style={styles.selectedBorder} />}
+                    {isSelected && (
+                      <TouchableOpacity style={styles.playButton} onPress={() => handlePlayCard()} activeOpacity={0.8}>
+                        <LinearGradient colors={['#FF7C2A', '#F73ED8']} style={styles.playButtonGradient}>
+                          <Text style={styles.playButtonText}>AT</Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    )}
+                  </TouchableOpacity>
                 );
               })}
             </View>
           )}
         </View>
-      </View>
-      
-      <Animated.View pointerEvents="none" style={[styles.announcementBanner, { transform: [{ translateX: announcementAnim.interpolate({ inputRange: [0, 1], outputRange: [-width, 0] }) }] }]}>
-        <LinearGradient colors={['transparent', roundEnded ? 'rgba(255, 180, 130, 0.95)' : 'rgba(255, 105, 235, 0.95)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.bannerGradient}>
-          <Text 
-            style={[styles.announcementText, roundEnded && styles.announcementTextWinner]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-          >
-            {roundEnded ? winnerName : "EN İYİ MEME'İ SEÇ!"}
-          </Text>
-        </LinearGradient>
-      </Animated.View>
 
-      <View style={styles.tableContainer}>
-        <View style={styles.mainTableRim}>
-          <View style={styles.tableSurface}
-          >
-           <Image 
-            source={require('../../assets/roomTableLogo.png')} 
-            style={styles.roomTableLogo} 
-            contentFit="contain" 
-            priority="high" // Sayfa yüklenirken işlemci önceliği bu logoya verilir
-            cachePolicy="memory" // RAM'de hazır tutulur, diskten okuma gecikmesini önler
-            transition={500} // Şık bir fade-in efektiyle profesyonel bir giriş sağlar
+        {roundEnded && myHand.length === 0 && (
+          <ScoreScreen 
+            scores={scores} 
+            navigation={navigation} 
+            onNewGame={amIHost ? handleHostNewRound : () => {}} 
           />
-          </View>
-
-          <PlayerSlot 
-            name={`${me?.name || myName}: ${scores[me?.name || myName] || 0}`} 
-            positionStyle={styles.bottomPlayer} 
-            avatarAnimal={me?.avatar || myAvatarSeed} 
-            badgeColor="#FCA9D7" 
-          />
-          
-          {opponents.map((opp, idx) => (
-              <PlayerSlot 
-                key={opp.id || idx} 
-                name={opp.name === 'Bekleniyor...' ? opp.name : `${opp.name}: ${scores[opp.name] || 0}`} 
-                positionStyle={opponentPositions[idx % 3]} 
-                avatarAnimal={opp.avatar} 
-                badgeColor={opp.name === 'Bekleniyor...' ? opponentColors[idx % 3] : ["#FDE58E", "#FBB0B2", "#FEC994"][idx % 3]} 
-              />
-          ))}
-
-          <View style={styles.centerArea}>
-            {phase === 'READING' && (
-              <Animated.View style={[styles.situationCardWrapper, { transform: [{ scale: popAnim }, { scale: cardScale }, { rotateY: cardRotate }] }]}>
-                <View style={styles.premiumSituationCard}>
-                  <LinearGradient colors={['rgba(255,255,255,0.7)', 'rgba(255,255,255,0)']} style={styles.glossyHighlight} />
-                  <View style={styles.cardInnerContent}>
-                    <View style={styles.premiumHeaderCentered}>
-                      <View style={styles.moodBadge}>
-                        <Text style={[styles.moodLetter, { color: '#FF69EB' }]}>M</Text>
-                        <Text style={[styles.moodLetter, { color: '#FF86C8' }]}>O</Text>
-                        <Text style={[styles.moodLetter, { color: '#FF8001' }]}>O</Text>
-                        <Text style={[styles.moodLetter, { color: '#F53BDC' }]}>D</Text>
-                      </View>
-                    </View>
-                    <View style={styles.premiumDivider} />
-                    <Text style={styles.premiumText}>{currentPrompt}</Text>
-                  </View>
-                </View>
-              </Animated.View>
-            )}
-
-            {(phase === 'PLAYING' || phase === 'WAITING_CARDS') && (
-              <View style={styles.proTimerContainer}>
-                <View style={[styles.staticRing, isTimeFrozen && styles.staticRingFrozen]} />
-                <Animated.View style={[
-                  styles.timerRing, 
-                  isTimeFrozen ? styles.timerRingFrozen : (timeLeft <= 3 && phase !== 'WAITING_CARDS' ? styles.timerRingDanger : styles.timerRingNormal),
-                  { transform: [{ rotate: rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }
-                ]} />
-                {isTimeFrozen && (
-                  <View style={styles.snowOverlay} pointerEvents="none">
-                     <Snowflake delay={0} left="25%" size={14} />
-                     <Snowflake delay={600} left="55%" size={10} />
-                  </View>
-                )}
-                <View style={[styles.modernTimerContent, isTimeFrozen && styles.modernTimerContentFrozen]}>
-                   <Text style={[
-                     styles.proTimerText, 
-                     timeLeft <= 3 && !isTimeFrozen && phase !== 'WAITING_CARDS' && styles.proTimerTextDanger,
-                     isTimeFrozen && styles.proTimerTextFrozen
-                   ]}>{phase === 'WAITING_CARDS' ? '...' : timeLeft}</Text>
-                </View>
-              </View>
-            )}
-
-            {(phase === 'VOTING' || phase === 'WAITING_VOTES' || phase === 'ROUND_ENDED') && playedCards.length > 0 && (
-              <View style={styles.votingAreaPro}>
-                {!roundEnded && (
-                  <View style={styles.proProgressBarContainer}>
-                    <Animated.View style={[
-                      styles.proProgressBar, 
-                      { 
-                        width: timeLeftAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
-                        backgroundColor: timeLeftAnim.interpolate({ inputRange: [0, 0.2, 0.5, 1], outputRange: ['#FF3B30', '#FF9500', '#FFDC5E', '#FF69EB'] })
-                      }
-                    ]} />
-                  </View>
-                )}
-                <View style={styles.votingRowPro}>
-                  {playedCards.map((card, index) => { 
-                    const isVoted = votedCardId === card.id;
-                    return (
-                      <TouchableOpacity 
-                        key={card.id || `played_${index}`} 
-                        style={[styles.voteCardWrapper, isVoted && styles.votedCardStyle, card.isMine && styles.disabledVoteCard]} 
-                        disabled={card.isMine || votedCardId !== null || phase === 'WAITING_VOTES' || phase === 'ROUND_ENDED'} onPress={() => handleVote(card.id)} activeOpacity={0.8}
-                      >
-                       <Image 
-                          source={{ uri: card.url }} 
-                          style={styles.memeImage} 
-                          contentFit="cover" // Kartın içine tam oturması için
-                          transition={400} // Yüklendiğinde şık bir fade-in efekti
-                          priority="high" // Oylama ekranındaki en önemli görsel olduğu için
-                          cachePolicy="memory-disk" // Agresif önbellekleme
-                          placeholder={require('../../assets/placeholderAvatar.png')} // Yüklenirken boş görünmemesi için
-                      />
-                        {card.isMine && (
-                          <View style={styles.myCardOverlay}>
-                            <Ionicons name="lock-closed" size={16} color="white" />
-                            <Text style={styles.myCardText}>SENİN</Text>
-                          </View>
-                        )}
-                        {isVoted && (
-                          <View style={styles.votedBadge}>
-                            <Ionicons name="heart" size={20} color="#FF00D6" />
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.bottomDeckWrapper}>
-        {!hasPlayed && (phase === 'READING' || phase === 'PLAYING') && (
-          <View style={[styles.handContainer, { width: width }]}>
-            {myHand.map((item, index) => { 
-              const rotation = (index - Math.floor(myHand.length / 2)) * 10; 
-              const isSelected = selectedCard === item.id;
-
-              // ✅ DOĞRU YER BURASI: Döngünün içi
-              const isThisCardHighlighted = highlightedCardId === item.id || highlightedCardId === 'ALL';
-              const borderGlow = highlightAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: ['rgba(255, 255, 255, 0)', 'rgba(0, 229, 255, 1)']
-              });
-              return (
-                <TouchableOpacity 
-                  key={item.id || `hand_${index}`} 
-                  activeOpacity={1} 
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setSelectedCard(isSelected ? null : item.id);
-                  }} 
-                  style={[
-                    styles.deckCard, 
-                    { transform: [{ rotate: `${rotation}deg` }, { translateY: isSelected ? -30 : 0 }, { scale: isSelected ? 1.1 : 1 }], 
-                      zIndex: isSelected ? 100 : index, 
-                      left: (width / 2) - 55 + (index - Math.floor(myHand.length / 2)) * 50 }
-                  ]}
-                >
-                 <Animated.View style={[
-                      styles.deckCardInner, // Kartın içeriği
-                      isThisCardHighlighted && {
-                        shadowColor: '#00E5FF',
-                        shadowOpacity: highlightAnim,
-                        shadowRadius: 15,
-                        borderColor: borderGlow,
-                        borderWidth: 2
-                      }
-                                      ]}>
-                    <Image 
-                        source={{ uri: item.url }} 
-                        style={styles.memeImage} 
-                        contentFit="cover" // Meme'in kartın içini en iyi şekilde doldurmasını sağlar
-                        transition={400} // Yüklendiğinde küt diye değil, 400ms'lik profesyonel bir yumuşaklıkla belirir
-                        priority="high" // Oylama ekranında bu görseller en önceliklidir, işlemci buna odaklanır
-                        cachePolicy="memory-disk" // Agresif önbellekleme: Bir kere oylanan meme, diskte kalsın!
-                    />
-    </Animated.View>
-                  {isSelected && <View style={styles.selectedBorder} />}
-                  {isSelected && (
-                    <TouchableOpacity style={styles.playButton} onPress={() => handlePlayCard()} activeOpacity={0.8}>
-                      <LinearGradient colors={['#FF7C2A', '#F73ED8']} style={styles.playButtonGradient}>
-                        <Text style={styles.playButtonText}>AT</Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
         )}
-      </View>
-
-      {roundEnded && myHand.length === 0 && (
-        <ScoreScreen 
-          scores={scores} 
-          navigation={navigation} 
-          onNewGame={amIHost ? handleHostNewRound : () => {}} 
+        
+        <DisconnectModal 
+          visible={!isConnected} 
+          onQuit={() => { 
+            navigation.replace('Home'); 
+          }}
         />
-      )}
-      
-      <DisconnectModal 
-        visible={!isConnected} 
-        onQuit={() => {
-          navigation.replace('Home'); 
-        }}
-      />
-    </View>
-  );
+      </View>
+    );
 }

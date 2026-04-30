@@ -254,8 +254,7 @@ export default function LobbyScreen({ route, navigation }) {
           transition={300} 
           cachePolicy="memory-disk" 
         />
-            <View style={styles.editIconContainer}>
-              <MaterialCommunityIcons name="pencil" size={16} color="white" /></View>
+          
           </TouchableOpacity>
           <Text style={styles.welcomeText}>Hoş geldin, <Text style={styles.nameHighlight}>{myName}</Text></Text>
         </View>

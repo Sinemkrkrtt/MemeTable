@@ -1,21 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, Animated, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons } from '@expo/vector-icons';
 import { database } from '../services/firebase';
 import { ref, onValue } from 'firebase/database';
 import { styles } from './RoomScreenStyles'; 
-import { Image } from 'expo-image';
-
-// 🔥 RENK PALETİ TEMA
-const THEME = {
-  pink: '#FF69EB',     // Ana Pembe
-  orange: '#FF914D',   // Ana Turuncu
-  neonPink: '#FF00D6', // Vurgu Pembesi (Eski yeşilin yerine)
-  glow: '#FF9EED',     // Parlama
-  host: '#FFD700'      // Gold (Lider için kalabilir)
-};
 
 const Snowflake = ({ delay, left, size }) => {
   const fallAnim = useRef(new Animated.Value(0)).current;
@@ -40,8 +30,7 @@ const Snowflake = ({ delay, left, size }) => {
     <Animated.Text style={{
       position: 'absolute', left: left, top: -10, fontSize: size,
       opacity: fadeAnim, transform: [{ translateY }],
-      textShadowColor: THEME.glow, // Temaya uygun parlama
-      textShadowRadius: 8
+      textShadowColor: '#00E5FF', textShadowRadius: 8
     }}>
       ❄️
     </Animated.Text>
@@ -54,17 +43,27 @@ export default function LobbyRoom({ route, navigation }) {
 
   const [players, setPlayers] = useState([]);
   const popAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current; // EKLENDİ: Alt bar animasyonu için eksik referans
   
+  // 🚀 DÜZELTME 2: Çift geçiş (double navigate) kilit sistemi
   const hasNavigated = useRef(false);
 
-  // Joker görselleri (assets klasöründe olmalı)
   const logoSwapHand = require('../../assets/joker1.png');
   const logoSwapCard = require('../../assets/joker2.png');
   const logoTimeFreeze = require('../../assets/joker3.png');
 
+  // EKLENDİ: Alt barın nefes alma animasyonu
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 1000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
+      ])
+    ).start();
+  }, []);
 
   useEffect(() => {
-  const lockScreen = async () => {
+    const lockScreen = async () => {
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
     };
     lockScreen();
@@ -81,51 +80,35 @@ export default function LobbyRoom({ route, navigation }) {
           setPlayers(playersList);
         }
 
-        // Oyun başladıysa yönlendir (1.2sn gecikmeli)
+        // 🚀 DÜZELTME 3: React Navigation animasyonlarına zaman tanıyoruz (1.2 saniye bekleme)
         if (data.status === 'playing' && !hasNavigated.current) {
           hasNavigated.current = true;
           setTimeout(() => {
              navigation.replace('RoomScreen', { roomId, myAvatarSeed, myName });
-          }, 1200);
+          }, 1200); // Masa yüklenir yüklenmez oyuna atmasın, önce bir masayı görsünler
         }
       }
     });
 
-   Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
+    Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
 
-   return () => {
-      unsubscribe();
-      // Component unmount olduğunda (sayfadan çıkıldığında) ekranı tekrar dikey yap
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-    };
+    return () => unsubscribe();
   }, [roomId]);
 
-  // 🚀 DÜZELTME: Oyuncu slot tasarımı (Yeşiller Neon Pembe yapıldı)
   const PlayerSlot = ({ name, positionStyle, avatarAnimal, badgeColor, isPlayerReady, isHost }) => (
     <View style={[styles.playerSlot, positionStyle]}>
       <View style={styles.avatarContainer}>
-        {/* Hazırsa Neon Pembe çerçeve, değilse slotun kendi rengi */}
-     <Image 
+        <Image 
           source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${avatarAnimal}&backgroundColor=ffffff` }} 
-          style={[
-            styles.avatar, 
-            { 
-                borderColor: isPlayerReady ? THEME.neonPink : badgeColor,
-                backgroundColor: '#FFF' 
-            }
-          ]} 
-          contentFit="cover"
-          transition={250} // Hazır olma durumu değiştiğinde yumuşak geçiş yapar
-          cachePolicy="memory-disk" // Agresif önbellekleme ile internete bağımlılığı azaltır
+          style={[styles.avatar, { borderColor: isPlayerReady ?  "#FF00D6": badgeColor, backgroundColor: '#FFF' }]} 
         />
         {isHost && (
-          <View style={{ position: 'absolute', top: -12, right: -5, backgroundColor: '#1A1A1A', borderRadius: 10, padding: 2, zIndex: 2 }}>
-            <Ionicons name="ribbon" size={18} color={THEME.host} />
+          <View style={{ position: 'absolute', top: -12, right: -5, backgroundColor: '#1A1A1A', borderRadius: 10, padding: 2 }}>
+            <Ionicons name="ribbon" size={18} color="#FFD700" />
           </View>
         )}
-        {/* İsim rozeti: Hazırsa Neon Pembe, değilse slotun rengi */}
-        <View style={[styles.nameBadge, { backgroundColor: isPlayerReady ? THEME.neonPink : badgeColor }]}>
-          <Text style={[styles.playerName, { color: '#000', fontWeight: 'bold' }]}>{name}</Text>
+        <View style={[styles.nameBadge, { backgroundColor: isPlayerReady ? "#FF00D6": badgeColor }]}>
+          <Text style={styles.playerName}>{name}</Text>
         </View>
       </View>
     </View>
@@ -134,20 +117,24 @@ export default function LobbyRoom({ route, navigation }) {
   return (
     <View style={styles.container}>
       <StatusBar hidden />
-      {/* Hafif kremsi bir arka plan */}
-      <View style={[styles.whiteBackground, { backgroundColor: '#FFFAF0' }]} />
+      <View style={styles.whiteBackground} />
 
-      {/* Üst Joker HUD (Silik duruyor lobide) */}
       <View style={styles.hudWrapper}>
-        <View style={[styles.hudContainer, { opacity: 0.3 }]}>
-          <Ionicons name="flash" size={30} color={THEME.neonPink} style={styles.hudTitleIcon} />
+        <View style={[styles.hudContainer, { opacity: 0.5 }]}>
+          <Ionicons name="flash" size={20} color="#FF00D6" style={styles.hudTitleIcon} />
+          {[logoSwapHand, logoSwapCard, logoTimeFreeze].map((img, i) => (
+            <View key={i} style={styles.jokerIconWrapper}>
+              <View style={styles.jokerButton}>
+                <Image source={img} style={styles.jokerLogo} resizeMode="contain" />
+              </View>
+            </View>
+          ))}
         </View>
       </View>
 
-      {/* Orta Banner */}
       <View style={styles.announcementBanner}>
         <LinearGradient
-          colors={['transparent', 'rgba(255, 105, 235, 0.4)', 'transparent']}
+          colors={['transparent', 'rgba(255, 105, 235, 0.8)', 'transparent']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
           style={styles.bannerGradient}
         >
@@ -155,25 +142,15 @@ export default function LobbyRoom({ route, navigation }) {
         </LinearGradient>
       </View>
 
-      {/* Masa Alanı */}
       <View style={styles.tableContainer}>
         <View style={styles.mainTableRim}>
-          {/* Masa Yüzeyi (Tasarım aynı kaldı) */}
           <View style={styles.tableSurface}>
-           <Image 
-              source={require('../../assets/roomTableLogo.png')} 
-              style={styles.roomTableLogo} 
-              contentFit="contain"
-              priority="high" // Sayfa açılır açılmaz ilk bu çizilsin
-              cachePolicy="memory" // RAM'e kilitleyerek anında erişim sağlar
-          />
+            <Image source={require('../../assets/roomTableLogo.png')} style={styles.roomTableLogo} />
           </View>
 
-          {/* Oyuncular - Renk paleti pembe/turuncu/sarı tonlarına sabitlendi */}
           {players.map((p, index) => {
             const positions = [styles.topPlayer, styles.leftPlayer, styles.rightPlayer, styles.bottomPlayer];
-            // Slot renkleri daha sıcak tonlar yapıldı
-            const colors = ["#FED7AA", "#FCA5A5", "#FDE68A", "#FBCFE8"]; // Sırasıyla Turuncu, Kırmızımsı, Sarı, Pembe
+            const colors = ["#FDE58E", "#FBB0B2", "#FEC994", "#FCA9D7"];
             return (
               <PlayerSlot 
                 key={p.id}
@@ -187,10 +164,9 @@ export default function LobbyRoom({ route, navigation }) {
             );
           })}
 
-          {/* Orta Oda Kodu */}
           <View style={styles.centerArea}>
             <View style={styles.proTimerContainer}>
-              <View style={[styles.staticRing, { borderColor: THEME.pink, opacity: 0.6 }]} />
+              <View style={[styles.staticRing, { borderColor: '#FF69EB', opacity: 0.6 }]} />
               
               <View style={styles.snowOverlay} pointerEvents="none">
                  <Snowflake delay={0} left="20%" size={14} />
@@ -198,34 +174,42 @@ export default function LobbyRoom({ route, navigation }) {
               </View>
 
               <View style={styles.modernTimerContent}>
-                 <Text style={{ color: THEME.pink, fontSize: 16, fontWeight: '900', letterSpacing: 1 }}>{roomId}</Text>
+                 <Text style={{ color: '#FF69EB', fontSize: 16, fontWeight: '900', letterSpacing: 1 }}>{roomId}</Text>
               </View>
             </View>
           </View>
         </View>
       </View>
 
-      {/* 🚀 DÜZELTME: Alt Deck Alanı (Gri ve Yeşil kaldırıldı, Pembe-Turuncu Tema) */}
-      <View style={[styles.bottomDeckWrapper, { shadowColor: THEME.glow, shadowRadius: 15, shadowOpacity: 0.5, elevation: 10 }]}>
-        <Animated.View style={{ transform: [{ scale: popAnim }] }}>
+      {/* Alt Bilgi Barı - Premium Pill Tasarımı */}
+      <View style={styles.bottomDeckWrapper}>
+        <Animated.View style={{ transform: [{ scale: popAnim }, { scale: pulseAnim }] }}>
           <LinearGradient 
-            colors={[THEME.orange, THEME.pink]} // Turuncu -> Pembe Gradyan
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
+            colors={['rgba(255, 124, 42, 0.9)', 'rgba(247, 62, 216, 0.9)']} 
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={{ 
-                paddingHorizontal: 40, 
-                paddingVertical: 12, 
-                borderRadius: 25, 
-                flexDirection: 'row', 
-                alignItems: 'center',
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.3)'
+              paddingHorizontal: 35, 
+              paddingVertical: 12, 
+              borderRadius: 30, 
+              flexDirection: 'row', 
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.4)',
+              shadowColor: '#FF69EB',
+              shadowOffset: { width: 0, height: 5 },
+              shadowOpacity: 0.4,
+              shadowRadius: 12,
+              elevation: 8
             }}
           >
-            {/* Nokta: Neon Pembe */}
-            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: THEME.neonPink, marginRight: 12, shadowColor: THEME.neonPink, shadowRadius: 5, shadowOpacity: 1 }} />
-            <Text style={{ color: 'white', fontWeight: '800', fontSize: 15, letterSpacing: 0.5 }}>
-              {players.length} OYUNCU BEKLENİYOR
+            {/* Yanıp sönen ufak bir gösterge ışığı */}
+            <View style={{ 
+              width: 8, height: 8, borderRadius: 4, 
+              backgroundColor: '#FFF', marginRight: 12,
+              shadowColor: '#FFF', shadowOpacity: 0.8, shadowRadius: 4
+            }} />
+            <Text style={{ color: 'white', fontWeight: '800', fontSize: 14, letterSpacing: 1 }}>
+              {players.length} OYUNCU HAZIRLANIYOR...
             </Text>
           </LinearGradient>
         </Animated.View>
