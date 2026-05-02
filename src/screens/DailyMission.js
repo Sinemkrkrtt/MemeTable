@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Modal, Animated, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { doc, updateDoc, increment } from 'firebase/firestore';
+import { doc, updateDoc, increment, getDoc } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { Image } from 'expo-image';
 import { Audio } from 'expo-av';
@@ -23,6 +23,10 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
   const [currentReward, setCurrentReward] = useState(REWARDS[0]);
   const [isClaiming, setIsClaiming] = useState(false);
   
+  // 🚀 YENİ EKLENEN STATE'LER
+  const [localHearts, setLocalHearts] = useState(wonHearts);
+  const [isBoxOpened, setIsBoxOpened] = useState(false);
+  
   const rewardOpacity = useRef(new Animated.Value(0)).current;
   const boxAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
@@ -30,7 +34,6 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
 
   const palet = { vibrant: '#FF00D6', orange: '#FF8A00', gray: '#D1D5DB' ,purple: 'rgb(199, 13, 199)', gold: '#FFD700',peach: '#FFA3A5'};
 
-  // 🚀 SES ÇALMA YARDIMCI FONKSİYONU
   const playRevealSound = async () => {
     try {
       const { sound } = await Audio.Sound.createAsync(
@@ -48,7 +51,6 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
   };
 
   useEffect(() => {
-    // iOS sessiz mod ayarı
     const setupAudio = async () => {
       await Audio.setAudioModeAsync({
         playsInSilentModeIOS: true,
@@ -61,8 +63,43 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
     }
   }, [isModalVisible]);
 
+  // 🚀 GÜNLÜK SIFIRLAMA KONTROLÜ (DAILY RESET LOGIC)
   useEffect(() => {
-    if (wonHearts >= 3) {
+    const checkDailyReset = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      
+      const userRef = doc(db, 'users', user.uid);
+      const snap = await getDoc(userRef);
+      
+      if (snap.exists()) {
+        const data = snap.data();
+        // Bugünün tarihini YYYY-MM-DD formatında al
+        const today = new Date().toISOString().split('T')[0]; 
+
+        // Eğer veritabanındaki tarih bugün değilse YENİ GÜN gelmiş demektir!
+        if (data.lastMissionDate !== today) {
+          await updateDoc(userRef, {
+            wonHearts: 0,
+            isBoxOpened: false,
+            lastMissionDate: today
+          });
+          setLocalHearts(0);
+          setIsBoxOpened(false);
+          if (onRefreshUser) onRefreshUser();
+        } else {
+          // Aynı günse mevcut durumu yükle
+          setLocalHearts(data.wonHearts || 0);
+          setIsBoxOpened(data.isBoxOpened || false);
+        }
+      }
+    };
+    
+    checkDailyReset();
+  }, [wonHearts]); // wonHearts proptan her güncellendiğinde senkronize et
+
+  useEffect(() => {
+    if (localHearts >= 3 && !isBoxOpened) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.08, duration: 800, useNativeDriver: true }),
@@ -72,12 +109,11 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
     } else {
       pulseAnim.setValue(1);
     }
-  }, [wonHearts]);
+  }, [localHearts, isBoxOpened]);
 
   const spin = rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   const handleInstantOpen = () => {
-    // 🚀 AKSİYON: Kutuya basınca ses çal ve titret
     playRevealSound();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -100,16 +136,18 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
     if (user) {
       const userRef = doc(db, "users", user.uid);
       try {
+        const today = new Date().toISOString().split('T')[0]; 
+        
         let updateData = { 
           wonHearts: 0, 
-          isBoxOpened: false 
+          isBoxOpened: true, // 🚀 DÜZELTME: Kutu artık "AÇILDI" olarak işaretlenecek (false idi)
+          lastMissionDate: today
         };
 
-        // 🚀 DÜZELTME: Hangi joker çıktıysa onu artır!
         if (currentReward.type === 'joker') {
-          let dbField = 'joker_skip'; // Varsayılan joker1
-          if (currentReward.id === 'joker2') dbField = 'joker_double'; // Veritabanındaki isimle eşleştir
-          if (currentReward.id === 'joker3') dbField = 'joker_freeze'; // Veritabanındaki isimle eşleştir
+          let dbField = 'joker_skip'; 
+          if (currentReward.id === 'joker2') dbField = 'joker_double';
+          if (currentReward.id === 'joker3') dbField = 'joker_freeze'; 
           
           updateData[dbField] = increment(1);
         } else if (currentReward.id === 'coin') {
@@ -119,10 +157,12 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
         }
 
         await updateDoc(userRef, updateData);
+        setIsBoxOpened(true); // UI'ı hemen güncelle
+        setLocalHearts(0);
+        
         if (onRefreshUser) onRefreshUser();
         setIsModalVisible(false);
       } catch (error) {
-        // Burada Custom Alert kullanılabilir!
         console.error("Hediye işlenirken hata:", error);
       } finally {
         setIsClaiming(false);
@@ -140,7 +180,11 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
           <View>
             <Text style={styles.missionMainTitle}>Günün Görevi</Text>
             <Text style={styles.missionSubTitle}>
-              {wonHearts < 3 ? `Paketi açmak için ${3 - wonHearts} maç kaldı` : "Paket Hazır!"}
+              {isBoxOpened 
+                ? "Günün görevi tamamlandı!" 
+                : localHearts < 3 
+                  ? `Paketi açmak için ${3 - localHearts} maç kaldı` 
+                  : "Paket Hazır!"}
             </Text>
           </View>
         </View>
@@ -157,15 +201,21 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
               <View style={styles.progressTrack}>
                 <LinearGradient 
                   colors={[palet.vibrant, palet.orange]} 
-                  style={[styles.progressFill, { width: `${(Math.min(wonHearts, 3) / 3) * 100}%` }]} 
+                  style={[styles.progressFill, { width: `${(Math.min(localHearts, 3) / 3) * 100}%` }]} 
                 />
               </View>
-              <Text style={styles.currentProgressText}>{Math.min(wonHearts, 3)}/3</Text>
+              <Text style={styles.currentProgressText}>{Math.min(localHearts, 3)}/3</Text>
             </View>
           </View>
           
           <View style={styles.giftWrapper}>
-            {wonHearts < 3 ? (
+            {/* 🚀 UI DÜZELTMESİ: Eğer kutu açıldıysa Yarın Gel yaz, Açılmadıysa kilitli/açık göster */}
+            {isBoxOpened ? (
+              <View style={styles.lockedGift}>
+                <Ionicons name="checkmark-circle" size={32} color="#10B981" />
+                <Text style={[styles.lockedText, { color: '#10B981' }]}>YARIN GEL</Text>
+              </View>
+            ) : localHearts < 3 ? (
               <View style={styles.lockedGift}>
                 <Ionicons name="gift" size={32} color={palet.gray} />
                 <Text style={styles.lockedText}>KİLİTLİ</Text>
@@ -246,6 +296,7 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
   );
 }
 
+// Stillerin tamamı senin gönderdiğinle aynı, aşağıda aynı şekilde bırakıldı...
 const styles = StyleSheet.create({
   historySection: { paddingHorizontal: 10, marginTop: 30 },
   missionHeaderRow: { marginBottom: 15 },
@@ -326,8 +377,8 @@ const styles = StyleSheet.create({
   },
   auraCircle: { flex: 1, borderRadius: 140 },
   premiumObjectFrame: { 
-   width: width * 0.4, // Sabit 170 yerine dinamik
-    aspectRatio: 0.75,  // Yüksekliği genişliğe oranla
+   width: width * 0.4,
+    aspectRatio: 0.75,
     height: 230, 
     borderRadius: 40, 
     backgroundColor: '#fff', 
@@ -350,7 +401,7 @@ const styles = StyleSheet.create({
     zIndex: 10
   },
   glassInfoCard: { 
-    marginTop: 35, // 55'ten 35'e çektim ki küçük ekranda sığsın
+    marginTop: 35,
     padding: 20, 
     width: width * 0.85,
     backgroundColor: 'rgba(255, 255, 255, 0.1)', 

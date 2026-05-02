@@ -362,7 +362,7 @@ export default function RoomScreen({ navigation, route }) {
     return () => clearTimeout(timer);
   }, [timeLeft, phase, isTimeFrozen]);
 
-  
+
 // 🚀 DÜZELTME: Kart Atma Aşamasında AFK Olanları Host Üzerinden Oynatma
   useEffect(() => {
     if (phase === 'WAITING_CARDS') {
@@ -399,6 +399,7 @@ export default function RoomScreen({ navigation, route }) {
   }, [phase, players, amIHost, roomId]);
 
   // 🚀 DÜZELTME: Oylama Aşamasında AFK Olanları Host Üzerinden Oynatma
+  // 🚀 DÜZELTME: Oylama Aşamasında Botların ve AFK Olanların Rastgele Oy Atması
   useEffect(() => {
     if (phase === 'WAITING_VOTES') {
       const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...');
@@ -407,16 +408,21 @@ export default function RoomScreen({ navigation, route }) {
       if (allVoted) {
         calculateResults();
       } else {
-        // Eğer oylamayan kaldıysa Host onlar adına rastgele oy atar.
+        // Eğer oylamayan (veya Bot olan) kaldıysa Host onlar adına tam rastgele oy atar.
         const hostTimeout = setTimeout(() => {
           if (amIHost) {
             actualPlayers.forEach(p => {
               if (!p.votedFor && stateRefs.current.playedCards.length > 0) {
+                // Kendi kartı HARİÇ masadaki diğer tüm kartları bir havuza al
                 const opponentCards = stateRefs.current.playedCards.filter(c => c.owner !== p.name);
-                const pool = opponentCards.length > 0 ? opponentCards : stateRefs.current.playedCards;
-                const randomOpponent = pool[Math.floor(Math.random() * pool.length)];
-                if (randomOpponent) {
-                  update(ref(database, `rooms/${roomId}/players/${p.id}`), { votedFor: randomOpponent.id });
+                
+                if (opponentCards.length > 0) {
+                  // Masadaki kartları tamamen rastgele karıştır
+                  const shuffledOpponents = [...opponentCards].sort(() => Math.random() - 0.5);
+                  
+                  // İlk sıradaki karta oy ver (Bot veya Gerçek Oyuncu fark etmeksizin)
+                  const randomCard = shuffledOpponents[0];
+                  update(ref(database, `rooms/${roomId}/players/${p.id}`), { votedFor: randomCard.id });
                 }
               }
             });
@@ -564,7 +570,10 @@ export default function RoomScreen({ navigation, route }) {
           id: p.playedCard.id + '_' + p.name 
       }));
 
-      setPlayedCards(tableCards.sort((a, b) => a.id.localeCompare(b.id)));
+      // 🚀 DÜZELTME: Kartları ID'ye göre sabit sıralamak yerine rastgele karıştırıyoruz!
+      const shuffledCards = tableCards.sort(() => Math.random() - 0.5);
+
+      setPlayedCards(shuffledCards);
       
       setPhase('VOTING');
       setTimeLeft(10);
@@ -645,20 +654,10 @@ export default function RoomScreen({ navigation, route }) {
 
       setWinnerName(bannerText);
 
+      // 🚀 DÜZELTME 1: Raundu kazanana sadece ses çal, kalp verme.
       if (isMeWinner) {
         playSound('win');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-        const user = auth.currentUser;
-        if (user) { 
-          const userRef = doc(db, 'users', user.uid);
-          updateDoc(userRef, { 
-            wonHearts: increment(1),      
-            coins: increment(100),       
-            diamonds: increment(1),      
-            isBoxOpened: false           
-          }).catch(e => console.log("Veri güncellenirken hata:", e)); 
-        }
       } else {
         playSound('fail');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -668,7 +667,40 @@ export default function RoomScreen({ navigation, route }) {
 
       Animated.spring(announcementAnim, { toValue: 1, useNativeDriver: true }).start();
 
-      if (stateRefs.current.myHand.length > 0) {
+      // 🚀 DÜZELTME 2: Oyun Bitti mi kontrolü (Eldeki kartlar bittiyse oyun bitmiştir)
+      const isGameOver = stateRefs.current.myHand.length === 0;
+
+      if (isGameOver) {
+        // Oyun bittiyse, genel toplam skorları hesapla
+        const finalScores = { ...scores };
+        Object.keys(roundPoints).forEach(owner => {
+          finalScores[owner] = (finalScores[owner] || 0) + roundPoints[owner];
+        });
+
+        // Masadaki en yüksek toplam puanı bul
+        let gameMaxScore = 0;
+        let gameWinners = [];
+        Object.keys(finalScores).forEach(owner => {
+          if (finalScores[owner] > gameMaxScore) {
+            gameMaxScore = finalScores[owner];
+            gameWinners = [owner];
+          } else if (finalScores[owner] === gameMaxScore && gameMaxScore > 0) {
+            gameWinners.push(owner);
+          }
+        });
+
+        // 🏆 Eğer TÜM OYUNU genel skorda SEN KAZANDIYSAN Kalp Ver!
+        if (gameWinners.includes(cleanMyName)) {
+          const user = auth.currentUser;
+          if (user) {
+            const userRef = doc(db, 'users', user.uid);
+            updateDoc(userRef, {
+              wonHearts: increment(1)
+            }).catch(e => console.log("Veri güncellenirken hata:", e));
+          }
+        }
+      } else {
+        // Oyun bitmediyse, raund bittikten 4 saniye sonra yeni el başlar
         setTimeout(() => {
           if (amIHost) {
             handleHostNewRound();
@@ -836,16 +868,18 @@ export default function RoomScreen({ navigation, route }) {
                 navigation.replace('Home');
               }}
             >
-              <Ionicons 
-                    name="exit-outline" 
-                    size={22} 
-                    color="#FF4D00" 
-                    style={{ 
-                      textShadowColor: 'rgba(255, 59, 48, 0.5)', 
-                      textShadowRadius: 8,
-                      transform: [{ scaleX: -1 }] 
-                    }} 
-                  />
+           <View style={{ transform: [{ scaleX: -1 }] }}>
+            <Ionicons 
+              name="exit-outline" 
+              size={22} 
+              color="#FF4D00" 
+              style={{ 
+                textShadowColor: 'rgba(255, 59, 48, 0.5)', 
+                textShadowRadius: 8
+                // transform komutunu buradan sildik ve yukarıdaki View'a taşıdık
+              }} 
+            />
+          </View>
             </TouchableOpacity>
 
             <View style={[styles.verticalDivider, { marginHorizontal: 12 }]} />
@@ -931,7 +965,7 @@ export default function RoomScreen({ navigation, route }) {
         </View>
         
         <Animated.View pointerEvents="none" style={[styles.announcementBanner, { transform: [{ translateX: announcementAnim.interpolate({ inputRange: [0, 1], outputRange: [-width, 0] }) }] }]}>
-          <LinearGradient colors={['transparent', roundEnded ? 'rgba(255, 180, 130, 0.95)' : 'rgba(255, 105, 235, 0.95)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.bannerGradient}>
+          <LinearGradient colors={['transparent', roundEnded ? '#FF4D00' : '#FF00D6', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.bannerGradient}>
             <Text 
               style={[styles.announcementText, roundEnded && styles.announcementTextWinner]}
               numberOfLines={1}
@@ -963,15 +997,15 @@ export default function RoomScreen({ navigation, route }) {
               badgeColor="#FCA9D7" 
             />
             
-            {opponents.map((opp, idx) => (
-                <PlayerSlot 
-                  key={opp.id || idx} 
-                  name={opp.name === 'Bekleniyor...' ? opp.name : `${opp.name}: ${scores[opp.name] || 0}`} 
-                  positionStyle={opponentPositions[idx % 3]} 
-                  avatarAnimal={opp.avatar} 
-                  badgeColor={opp.name === 'Bekleniyor...' ? opponentColors[idx % 3] : ["#FDE58E", "#FBB0B2", "#FEC994"][idx % 3]} 
-                />
-            ))}
+            {opponents.slice(0, 3).map((opp, idx) => (
+            <PlayerSlot 
+              key={opp.id || idx} 
+              name={opp.name === 'Bekleniyor...' ? opp.name : `${opp.name}: ${scores[opp.name] || 0}`} 
+              positionStyle={opponentPositions[idx % 3]} 
+              avatarAnimal={opp.avatar} 
+              badgeColor={opp.name === 'Bekleniyor...' ? opponentColors[idx % 3] : ["#FDE58E", "#FBB0B2", "#FEC994"][idx % 3]} 
+            />
+        ))}
 
             <View style={styles.centerArea}>
               {phase === 'READING' && (
@@ -1119,7 +1153,7 @@ export default function RoomScreen({ navigation, route }) {
                     {isSelected && <View style={styles.selectedBorder} />}
                     {isSelected && (
                       <TouchableOpacity style={styles.playButton} onPress={() => handlePlayCard()} activeOpacity={0.8}>
-                        <LinearGradient colors={['#FF7C2A', '#F73ED8']} style={styles.playButtonGradient}>
+                        <LinearGradient colors={['#FFA167', '#F73ED8']} style={styles.playButtonGradient}>
                           <Text style={styles.playButtonText}>AT</Text>
                         </LinearGradient>
                       </TouchableOpacity>

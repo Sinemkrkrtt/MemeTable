@@ -134,7 +134,7 @@ export default function LobbyRoom({ route, navigation }) {
 
       <View style={styles.announcementBanner}>
         <LinearGradient
-          colors={['transparent', 'rgba(255, 105, 235, 0.8)', 'transparent']}
+          colors={['transparent', '#FF00D6', 'transparent']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
           style={styles.bannerGradient}
         >

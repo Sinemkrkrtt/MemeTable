@@ -11,6 +11,9 @@ import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 import { Image } from 'expo-image';
 
+const BOT_NAMES = ["Alex", "Zeynep", "MemeLord", "Cansu", "Shadow", "Burak", "KediKız", "IronMan_99", "DogeFan"];
+const BOT_AVATARS = ["Felix", "Bella", "Max", "Luna", "Charlie", "Lucy", "Cooper", "Daisy", "Rocky"];
+
 export default function RandomMatchScreen({ navigation, route }) {
   const { width, height } = useWindowDimensions();
   const { myAvatarSeed, myName } = route?.params || { myAvatarSeed: 'Oliver', myName: 'Ben' };
@@ -26,6 +29,9 @@ export default function RandomMatchScreen({ navigation, route }) {
   const radarAnim = useRef(new Animated.Value(0)).current;
   const matchPopAnim = useRef(new Animated.Value(0)).current;
   const hasMatched = useRef(false);
+  
+  const searchTimeoutRef = useRef(null);
+  const poolDataRef = useRef(null); // Havuzdaki anlık oyuncuları tutmak için eklendi
 
   const playSound = async (type) => {
     try {
@@ -45,13 +51,9 @@ export default function RandomMatchScreen({ navigation, route }) {
         if (docSnap.exists()) setUserStats({ coins: docSnap.data().coins || 0, diamonds: docSnap.data().diamonds || 0 });
       });
     }
-    
-    return () => { 
-      unsubscribeUser(); 
-    };
+    return () => unsubscribeUser(); 
   }, []);
 
-  // 🚀 DÜZELTME: Animasyon artık pürüzsüz bir şekilde büyüyüp küçülecek (Nefes alma efekti)
   useEffect(() => {
     if (isSearching) {
       Animated.loop(
@@ -64,6 +66,123 @@ export default function RandomMatchScreen({ navigation, route }) {
       radarAnim.stopAnimation();
     }
   }, [isSearching]);
+
+  // 🚀 YENİ: Ortak Eşleştirme ve Bot Ekleme Fonksiyonu
+  const handleMatchmaking = (data, isTimeUp) => {
+    if (hasMatched.current || !data) return;
+
+    // 1. DURUM: BİR HOST BENİ KENDİ ODASINA ÇEKTİ Mİ? (Başka biri 30 saniyeyi veya 4 kişiyi doldurduysa)
+    const myData = data[myPlayerId];
+    if (myData && myData.matchedRoom) {
+      hasMatched.current = true;
+      clearTimeout(searchTimeoutRef.current);
+      setIsSearching(false);
+      setMatchFound(true);
+      playSound('match');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Animated.spring(matchPopAnim, { toValue: 1, friction: 5, tension: 40, useNativeDriver: true }).start();
+
+      update(ref(database, `rooms/${myData.matchedRoom}/players/${myPlayerId}`), {
+        id: myPlayerId,
+        name: cleanMyName,
+        avatar: myAvatarSeed,
+        isHost: false
+      });
+
+      remove(ref(database, `matchmaking/waiting_pool/${myPlayerId}`));
+
+      setTimeout(() => {
+        navigation.replace('RoomScreen', { 
+          roomId: myData.matchedRoom, 
+          myAvatarSeed, 
+          myName: cleanMyName, 
+          isHost: false,
+          myPlayerId: myPlayerId
+        });
+      }, 2500);
+      return;
+    }
+
+    // 2. DURUM: HAVUZDAKİ GERÇEK OYUNCULARI AL
+    const playersInPool = Object.values(data)
+      .filter(p => !p.matchedRoom) // Zaten odaya alınanları sayma
+      .sort((a, b) => a.joinedAt - b.joinedAt);
+
+    // Eğer 4 kişi olduysa VEYA 30 saniye dolduysa işlemi başlat
+    if (playersInPool.length >= 4 || (isTimeUp && playersInPool.length > 0)) {
+      const matchedPlayers = playersInPool.slice(0, 4);
+      const isMeMatched = matchedPlayers.some(p => p.id === myPlayerId);
+
+      if (isMeMatched) {
+        // En uzun süredir bekleyen kişi Host (Kurucu) olur
+        const amIHost = matchedPlayers[0].id === myPlayerId;
+        
+        if (amIHost) {
+          hasMatched.current = true;
+          clearTimeout(searchTimeoutRef.current);
+          setIsSearching(false);
+          setMatchFound(true);
+          playSound('match');
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          Animated.spring(matchPopAnim, { toValue: 1, friction: 5, tension: 40, useNativeDriver: true }).start();
+
+         // Oda ID'sini saniye ve rastgele sayılarla tamamen benzersiz yapıyoruz
+          const newRoomId = `PUB_${Date.now().toString().slice(-5)}_${Math.random().toString(36).substring(2, 6)}`;
+
+          update(ref(database, `rooms/${newRoomId}`), {
+            status: 'playing',
+            round: 1,
+            createdAt: Date.now()
+          });
+
+          // Gerçek oyuncuları al (Kendim hariç diğerlerine matchedRoom ile odayı bildiriyorum)
+          matchedPlayers.forEach(p => {
+            if (p.id === myPlayerId) {
+              remove(ref(database, `matchmaking/waiting_pool/${p.id}`));
+            } else {
+              update(ref(database, `matchmaking/waiting_pool/${p.id}`), { matchedRoom: newRoomId });
+            }
+          });
+
+          // 🚀 Kaç kişi eksikse O KADAR bot ekle! (Örn: 2 gerçek kişi varsa 2 bot)
+          const botsNeeded = 4 - matchedPlayers.length;
+          const usedIndices = [];
+          for (let i = 0; i < botsNeeded; i++) {
+            let randIdx;
+            do { randIdx = Math.floor(Math.random() * BOT_NAMES.length); } while (usedIndices.includes(randIdx));
+            usedIndices.push(randIdx);
+
+            const botId = `bot_${Math.random().toString(36).substring(7)}`;
+            update(ref(database, `rooms/${newRoomId}/players/${botId}`), {
+              id: botId,
+              name: BOT_NAMES[randIdx],
+              avatar: BOT_AVATARS[randIdx],
+              isHost: false,
+              isBot: true
+            });
+          }
+
+          update(ref(database, `rooms/${newRoomId}/players/${myPlayerId}`), {
+            id: myPlayerId,
+            name: cleanMyName,
+            avatar: myAvatarSeed,
+            isHost: true
+          });
+
+          setTimeout(() => {
+            navigation.replace('RoomScreen', { 
+              roomId: newRoomId, 
+              myAvatarSeed, 
+              myName: cleanMyName, 
+              isHost: true,
+              myPlayerId: myPlayerId
+            });
+          }, 2500);
+        }
+        // Eğer Host değilsem hiçbir şey yapmıyorum, Host zaten yukarıda bana "matchedRoom" bildirecek!
+      }
+    }
+  };
 
   useEffect(() => {
     const poolRef = ref(database, 'matchmaking/waiting_pool');
@@ -78,85 +197,50 @@ export default function RandomMatchScreen({ navigation, route }) {
 
     onDisconnect(myPlayerRef).remove();
 
+    // Zamanlayıcıyı başlat
+    searchTimeoutRef.current = setTimeout(() => {
+      if (!hasMatched.current && poolDataRef.current) {
+        handleMatchmaking(poolDataRef.current, true);
+      }
+    }, 30000); // 30 Saniye
+
     const unsubscribe = onValue(poolRef, (snapshot) => {
-      if (hasMatched.current) return; 
+      poolDataRef.current = snapshot.val();
+      
+      // Her veri geldiğinde eşleştirme var mı kontrol et
+      handleMatchmaking(poolDataRef.current, false);
 
-      const data = snapshot.val();
-      if (data) {
-        const playersInPool = Object.values(data).sort((a, b) => a.joinedAt - b.joinedAt);
+      if (poolDataRef.current) {
+        const playersInPool = Object.values(poolDataRef.current)
+          .filter(p => !p.matchedRoom) 
+          .sort((a, b) => a.joinedAt - b.joinedAt);
         setPlayers(playersInPool);
-
-        if (playersInPool.length >= 2) {
-          
-          const matchedPlayers = playersInPool.slice(0, 2);
-          const isMeMatched = matchedPlayers.some(p => p.id === myPlayerId);
-
-          if (isMeMatched) {
-            hasMatched.current = true; 
-            setIsSearching(false);
-            setMatchFound(true);
-            playSound('match');
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            
-            Animated.spring(matchPopAnim, { toValue: 1, friction: 5, tension: 40, useNativeDriver: true }).start();
-
-            const amIHost = matchedPlayers[0].id === myPlayerId;
-            const newRoomId = `PUB_${matchedPlayers[0].id.substring(0, 6)}`;
-
-            if (amIHost) {
-              update(ref(database, `rooms/${newRoomId}`), {
-                status: 'playing',
-                round: 1,
-                createdAt: Date.now()
-              });
-              matchedPlayers.forEach(p => remove(ref(database, `matchmaking/waiting_pool/${p.id}`)));
-            }
-
-            update(ref(database, `rooms/${newRoomId}/players/${myPlayerId}`), {
-              id: myPlayerId,
-              name: cleanMyName,
-              avatar: myAvatarSeed,
-              isHost: amIHost
-            });
-
-            setTimeout(() => {
-              navigation.replace('RoomScreen', { 
-                roomId: newRoomId, 
-                myAvatarSeed, 
-                myName: cleanMyName, 
-                isHost: amIHost,
-                myPlayerId: myPlayerId
-              });
-            }, 2500);
-          }
-        }
+      } else {
+        setPlayers([]);
       }
     });
 
     return () => {
       unsubscribe();
+      clearTimeout(searchTimeoutRef.current);
       if (!hasMatched.current) { remove(myPlayerRef); }
     };
   }, []);
 
   useEffect(() => {
-    const backHandler = BackHandler.addEventListener(
-      'hardwareBackPress',
-      handleCancelSearch
-    );
-
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', handleCancelSearch);
     return () => backHandler.remove();
   }, []);
 
-const handleCancelSearch = () => {
-    // 🚀 DÜZELTME: Eşleşme bulunduysa iptal etmeyi engelle!
+  const handleCancelSearch = () => {
     if (hasMatched.current) return true; 
 
+    clearTimeout(searchTimeoutRef.current); 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     playSound('click');
     remove(ref(database, `matchmaking/waiting_pool/${myPlayerId}`)); 
     navigation.goBack();
-    return true; // BackHandler için true dönmek zorundayız
+    return true; 
   };
 
   let opponents = players.filter(p => p.id !== myPlayerId);
@@ -176,8 +260,8 @@ const handleCancelSearch = () => {
             source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${avatarAnimal}&backgroundColor=ffffff` }} 
             style={[roomStyles.avatar, { borderColor: badgeColor, backgroundColor: '#FFF' }]} 
             contentFit="cover"
-            transition={200} // Oyuncu odaya girdiğinde yumuşakça belirmesi için
-            cachePolicy="memory-disk" // Rakip oyuncuların avatarlarını hafızaya kazır
+            transition={200}
+            cachePolicy="memory-disk"
           />
         )}
         <View style={[roomStyles.nameBadge, { backgroundColor: badgeColor, shadowColor: badgeColor }]}>
@@ -192,7 +276,6 @@ const handleCancelSearch = () => {
       <StatusBar hidden />
       <View style={roomStyles.whiteBackground} />
 
-
       <View style={roomStyles.tableContainer}>
         <View style={roomStyles.mainTableRim}>
           <View style={roomStyles.tableSurface}>
@@ -200,23 +283,28 @@ const handleCancelSearch = () => {
               source={require('../../assets/roomTableLogo.png')} 
               style={roomStyles.roomTableLogo} 
               contentFit="contain" 
-              priority="high" // Masa yüklendiğinde ilk bu çizilsin
-              cachePolicy="memory" // Yerel dosya olduğu için RAM'de hazır tutulsun
-              transition={500} // Odaya girerken logonun yumuşakça parlamasını sağlar
+              priority="high" 
+              cachePolicy="memory" 
+              transition={500} 
             />
             </View>
 
           <PlayerSlot name={cleanMyName} positionStyle={roomStyles.bottomPlayer} avatarAnimal={myAvatarSeed} badgeColor="#FCA9D7" />
-          
-          {opponents.map((opp, idx) => (
-              <PlayerSlot key={opp.id || idx} name={opp.name} positionStyle={opponentPositions[idx % 3]} avatarAnimal={opp.avatar} badgeColor={opp.isSearching ? opponentColors[idx % 3] : ["#FDE58E", "#FBB0B2", "#FEC994"][idx % 3]} isSearchingSlot={opp.isSearching} />
-          ))}
+        {opponents.slice(0, 3).map((opp, idx) => (
+            <PlayerSlot 
+                key={opp.id || idx} 
+                name={opp.name} 
+                positionStyle={opponentPositions[idx % 3]} 
+                avatarAnimal={opp.avatar} 
+                badgeColor={opp.isSearching ? opponentColors[idx % 3] : ["#FDE58E", "#FBB0B2", "#FEC994"][idx % 3]} 
+                isSearchingSlot={opp.isSearching} 
+            />
+        ))}
 
           <View style={roomStyles.centerArea}>
             {isSearching && (
               <View style={{ justifyContent: 'center', alignItems: 'center' }}>
                 
-                {/* 🚀 DÜZELTME: Sadece Arama ikonu animasyona bağlandı */}
                 <TouchableOpacity activeOpacity={0.7} onPress={handleCancelSearch} style={{ alignItems: 'center' }}>
                   <Animated.View style={[
                     styles.radarCenter,
@@ -224,7 +312,7 @@ const handleCancelSearch = () => {
                       transform: [{
                         scale: radarAnim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [1, 1.25] // 1 normal, 1.25 büyümüş hali
+                          outputRange: [1, 1.25] 
                         })
                       }]
                     }
@@ -244,12 +332,34 @@ const handleCancelSearch = () => {
             )}
 
             {matchFound && (
-              <Animated.View style={[roomStyles.premiumSituationCard, { justifyContent: 'center', alignItems: 'center', transform: [{ scale: matchPopAnim }] }]}>
-                <LinearGradient colors={['rgba(255,255,255,0.2)', 'rgba(255,255,255,0.05)']} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={roomStyles.glossyHighlight} />
-                <Ionicons name="game-controller" size={44} color="#FF00D6" style={{ marginBottom: 5 }} />
-                <Text style={[roomStyles.premiumText, { color: '#FFFFFFF2', fontSize: 16, textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 5 }]}>EŞLEŞME BULUNDU!</Text>
-                <Text style={{ color: '#FFFFFF', fontWeight: 'bold', marginTop: 5, fontSize: 12 }}>Oyun Başlıyor...</Text>
-              </Animated.View>
+              <Animated.View style={[styles.seniorMatchCard, { transform: [{ scale: matchPopAnim }] }]}>
+            {/* Arka planın köşelerini de kartla aynı ovalikte kesiyoruz */}
+            <LinearGradient 
+              colors={['rgba(255, 255, 255, 0.95)', 'rgba(253, 240, 250, 0.95)']} 
+              start={{x: 0, y: 0}} 
+              end={{x: 1, y: 1}} 
+              style={[StyleSheet.absoluteFillObject, { borderRadius: 28 }]} 
+            />
+            
+            {/* Yeni Derinlikli Pembe Çerçeve */}
+            <View style={styles.neonBorder} />
+
+            {/* İkon Konteyneri */}
+            <View style={styles.matchIconWrapper}>
+              <LinearGradient 
+                colors={['#FF00D6', '#FF8A00']} 
+                start={{x: 0, y: 0}} 
+                end={{x: 1, y: 1}} 
+                style={StyleSheet.absoluteFillObject} 
+              />
+              <Ionicons name="game-controller" size={34} color="#FFF" />
+            </View>
+
+            {/* Tipografi */}
+            <Text style={styles.matchTitle}>EŞLEŞME BULUNDU!</Text>
+            <Text style={styles.matchSubtitle}>Rakipler masaya oturuyor...</Text>
+          </Animated.View>
+
             )}
           </View>
         </View>
@@ -303,5 +413,57 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginLeft: 4,
     letterSpacing: 1.5,
-  }
+  },
+ seniorMatchCard: {
+    width: 270,
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    // overflow: 'hidden' KULLANMIYORUZ (Gölgeleri kesmesin diye)
+    
+    // 🚀 Derinliği Artırılmış 3D Pembe Gölge
+    shadowColor: '#FF00D6',
+    shadowOffset: { width: 0, height: 12 }, // Gölgeyi aşağıya doğru çektik, kart havaya kalktı
+    shadowOpacity: 0.35, // Daha belirgin bir gölge
+    shadowRadius: 25, // Çok daha geniş alana yayılan parlama
+    elevation: 22,
+  },
+  neonBorder: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 28,
+    borderWidth: 2.5, // Çerçeveyi hafif kalınlaştırdık
+    borderColor: '#FF00D6', // Canlı Neon Pembe
+    opacity: 0.8, // Tam %100 solid yerine hafif şeffaflık vererek "camın kenarı" hissi kattık
+  },
+  matchIconWrapper: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    overflow: 'hidden',
+    shadowColor: '#FF8A00',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  matchTitle: {
+    fontSize: 19,
+    fontWeight: '900',
+    color:  '#FF4D00', // Açık fonda okunabilmesi için başlığı neon pembe yaptık
+    letterSpacing: 1.5,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  matchSubtitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B', // Göz yormayan, modern ve şık bir gri tonu
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
 });

@@ -57,8 +57,8 @@ roomTableLogo: {
   // ==========================================
   playerSlot: { position: 'absolute', alignItems: 'center', zIndex: 60 },
   topPlayer: { top: -35 }, 
-  leftPlayer: { left: -35, top: '35%' }, 
-  rightPlayer: { right: -35, top: '35%' }, 
+  leftPlayer: { left: -45, top: '35%' }, 
+  rightPlayer: { right: -45, top: '35%' }, 
   bottomPlayer: { bottom: -35 },
   
   avatarContainer: { alignItems: 'center' },
