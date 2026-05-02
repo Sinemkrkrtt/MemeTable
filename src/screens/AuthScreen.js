@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  View, Text, TextInput, TouchableOpacity, StyleSheet, 
-  SafeAreaView, Image, KeyboardAvoidingView, Platform, 
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Image, KeyboardAvoidingView, Platform, 
   StatusBar, Dimensions, ActivityIndicator, ScrollView, Keyboard,
   Modal // 🚀 Custom Alert için eklendi
 } from 'react-native';
@@ -15,6 +14,7 @@ import {
   sendPasswordResetEmail 
 } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');
 

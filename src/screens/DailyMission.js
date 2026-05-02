@@ -5,7 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { doc, updateDoc, increment, getDoc } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { Image } from 'expo-image';
-import { Audio } from 'expo-av';
+// 1. YENİ EKLENEN IMPORTLAR: Ses işlemleri için yeni useAudioPlayer ve setAudioModeAsync kullanıyoruz.
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 
 const { width } = Dimensions.get('window');
@@ -34,27 +35,27 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
 
   const palet = { vibrant: '#FF00D6', orange: '#FF8A00', gray: '#D1D5DB' ,purple: 'rgb(199, 13, 199)', gold: '#FFD700',peach: '#FFA3A5'};
 
-  const playRevealSound = async () => {
+  // 2. YENİ SES HOOK'U: Ses sayfa açıldığında hafızaya yüklenir.
+  const revealSound = useAudioPlayer(require('../../assets/sounds/magic_reveal.mp3'));
+
+  // 3. YENİ VE HIZLI playRevealSound FONKSİYONU
+  const playRevealSound = () => {
     try {
-      const { sound } = await Audio.Sound.createAsync(
-        require('../../assets/sounds/magic_reveal.mp3'),
-        { shouldPlay: true }
-      );
-      sound.setOnPlaybackStatusUpdate(async (status) => {
-        if (status.didJustFinish) {
-          await sound.unloadAsync();
-        }
-      });
+      revealSound.seekTo(0);
+      revealSound.play();
     } catch (error) {
       console.log("Ses çalınamadı:", error);
     }
   };
 
   useEffect(() => {
+    // 4. SES AYARLARI GÜNCELLENDİ (Eski Audio kütüphanesi referansı kaldırıldı)
     const setupAudio = async () => {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-      });
+        try {
+            await setAudioModeAsync({ playsInSilentMode: true });
+        } catch (error) {
+            console.log("Ses ayarı yapılamadı:", error);
+        }
     };
     setupAudio();
 

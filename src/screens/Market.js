@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'; 
 import { 
-  View, Text, StyleSheet, SafeAreaView, TouchableOpacity, 
+  View, Text, StyleSheet, TouchableOpacity, 
   ScrollView, Modal, Dimensions, StatusBar, FlatList, Platform,
   ActivityIndicator
 } from 'react-native';
@@ -13,8 +13,8 @@ import {
   Nunito_800ExtraBold, 
   Nunito_900Black 
 } from '@expo-google-fonts/nunito';
-
-import { Audio } from 'expo-av';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { doc, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
@@ -23,23 +23,7 @@ import { db, auth } from '../services/firebase';
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 55) / 2;
 
-const playSound = async (type) => {
-  const soundMap = {
-    click: require('../../assets/sounds/click.mp3'),
-    success: require('../../assets/sounds/cha-ching.mp3'), 
-    error: require('../../assets/sounds/error.mp3'),
-  };
-
-  try {
-    const { sound } = await Audio.Sound.createAsync(soundMap[type]);
-    await sound.playAsync();
-    sound.setOnPlaybackStatusUpdate((status) => {
-      if (status.didJustFinish) sound.unloadAsync();
-    });
-  } catch (error) {
-    console.log("Ses çalınamadı:", error);
-  }
-};
+// 1. ESKİ async playSound FONKSİYONUNU BURADAN TAMAMEN SİLDİK
 
 const palet = {
   pink: '#FF69EB',
@@ -98,9 +82,37 @@ export default function MarketScreen({ navigation }) {
     Nunito_900Black,
   });
 
+  // 2. YENİ SES HOOK'LARI EKLENDİ
+  const clickSound = useAudioPlayer(require('../../assets/sounds/click.mp3'));
+  const successSound = useAudioPlayer(require('../../assets/sounds/cha-ching.mp3'));
+  const errorSound = useAudioPlayer(require('../../assets/sounds/error.mp3'));
+
+  // 3. YENİ playSound FONKSİYONU EKLENDİ
+  const playSound = (type) => {
+    try {
+      if (type === 'click') {
+        clickSound.seekTo(0);
+        clickSound.play();
+      } else if (type === 'success') {
+        successSound.seekTo(0);
+        successSound.play();
+      } else if (type === 'error') {
+        errorSound.seekTo(0);
+        errorSound.play();
+      }
+    } catch (error) {
+      console.log("Ses hatası:", error);
+    }
+  };
+
   useEffect(() => {
+    // 4. SES AYARLARI GÜNCELLENDİ (Eski Audio kütüphanesi referansı kaldırıldı)
     const configureAudio = async () => {
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      try {
+        await setAudioModeAsync({ playsInSilentMode: true });
+      } catch (error) {
+        console.log("Ses ayarı yapılamadı:", error);
+      }
     };
     configureAudio();
 
@@ -119,6 +131,8 @@ export default function MarketScreen({ navigation }) {
     return () => unsubscribe(); 
   }, []);
 
+  // --- BURADAN AŞAĞISI KESİNLİKLE DEĞİŞTİRİLMEDİ ---
+  
   // 🚀 CUSTOM ALERT GÖSTERİCİ FONKSİYON
   const showAlert = (title, message, buttons) => {
     setAlertConfig({

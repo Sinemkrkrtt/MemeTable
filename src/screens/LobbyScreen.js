@@ -4,7 +4,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StackActions } from '@react-navigation/native';
-import { Audio } from 'expo-av'; // 🔥 SES KÜTÜPHANESİ EKLENDİ
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { Image } from 'expo-image';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -16,29 +16,41 @@ import { ref as dbRef, set, onValue, update, remove } from 'firebase/database';
 const { width } = Dimensions.get('window');
 const MAX_PLAYERS = 4;
 
-// 🔊 SES ÇALMA YARDIMCI FONKSİYONU (Düzeltildi)
-const playSound = async (type) => {
-  const soundMap = {
-    click: require('../../assets/sounds/click.mp3'),
-    ready: require('../../assets/sounds/ready.mp3'),
-    join: require('../../assets/sounds/join.mp3'),
-    start: require('../../assets/sounds/start.mp3'),
-    error: require('../../assets/sounds/error.mp3'),
-  };
-
-  try {
-    const { sound } = await Audio.Sound.createAsync(soundMap[type]);
-    await sound.playAsync();
-    // Bellek sızıntısını önlemek için ses bitince temizle
-    sound.setOnPlaybackStatusUpdate((status) => {
-      if (status.didJustFinish) sound.unloadAsync();
-    });
-  } catch (error) {
-    console.log("Ses çalınamadı:", error);
-  }
-};
+// 1. ESKİ async playSound FONKSİYONUNU BURADAN TAMAMEN SİLDİK
 
 export default function LobbyScreen({ route, navigation }) {
+  // 2. YENİ SES HOOK'LARI EKLENDİ (Sesler sayfa açıldığında hafızaya yüklenir)
+  const clickSound = useAudioPlayer(require('../../assets/sounds/click.mp3'));
+  const readySound = useAudioPlayer(require('../../assets/sounds/ready.mp3'));
+  const joinSound = useAudioPlayer(require('../../assets/sounds/join.mp3'));
+  const startSound = useAudioPlayer(require('../../assets/sounds/start.mp3'));
+  const errorSound = useAudioPlayer(require('../../assets/sounds/error.mp3'));
+
+  // 3. YENİ VE HIZLI playSound FONKSİYONU
+  const playSound = (type) => {
+    try {
+      if (type === 'click') { clickSound.seekTo(0); clickSound.play(); }
+      else if (type === 'ready') { readySound.seekTo(0); readySound.play(); }
+      else if (type === 'join') { joinSound.seekTo(0); joinSound.play(); }
+      else if (type === 'start') { startSound.seekTo(0); startSound.play(); }
+      else if (type === 'error') { errorSound.seekTo(0); errorSound.play(); }
+    } catch (error) {
+      console.log("Ses hatası:", error);
+    }
+  };
+
+  // 4. SES AYARLARI (Sessizde çalma izni vb.)
+  useEffect(() => {
+    const setupAudio = async () => {
+      try {
+        await setAudioModeAsync({ playsInSilentMode: true });
+      } catch (e) {
+        console.log("Ses ayarı yapılamadı:", e);
+      }
+    };
+    setupAudio();
+  }, []);
+
   const isHost = route.params?.isHost ?? false;
   
   const incomingRoomId = route.params?.roomId;
@@ -60,6 +72,8 @@ export default function LobbyScreen({ route, navigation }) {
   
   // 🔊 Odaya yeni biri katıldığını anlamak için önceki sayıyı tutuyoruz
   const prevPlayerCount = useRef(0);
+
+  // --- BURADAN AŞAĞISI KESİNLİKLE DEĞİŞTİRİLMEDİ ---
 
   useEffect(() => {
     let currentRoomId = initialRoomId;
@@ -303,7 +317,6 @@ export default function LobbyScreen({ route, navigation }) {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' },
   headerBackground: { paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 40, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, alignItems: 'center', shadowColor: '#FF69EB', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 15, elevation: 8 },

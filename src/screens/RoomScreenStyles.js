@@ -91,17 +91,26 @@ roomTableLogo: {
   centerArea: { alignItems: 'center', zIndex: 50 },
   situationCardWrapper: { position: 'absolute', top: -105 },
   premiumSituationCard: { 
-    width: 310, height: 160, backgroundColor: '#FFD1A3', 
+    width: 330, height: 160, backgroundColor: '#FFD1A3', 
     borderRadius: 20, borderWidth: 4, borderColor: '#FFFFFF', 
     elevation: 25, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 15, shadowOffset: { width: 0, height: 10 }, overflow: 'hidden'
   },
+  fadeOverlay: {
+  position: 'absolute',
+  bottom: 0,
+  left: 0,
+  right: 0,
+  height: 40, // Gradyanın yüksekliği
+  borderBottomLeftRadius: 20,
+  borderBottomRightRadius: 20,
+},
   cardInnerContent: { flex: 1, padding: 18, justifyContent: 'space-between', zIndex: 2 },
   glossyHighlight: { position: 'absolute', top: 0, left: 0, right: 0, height: '25%', zIndex: 1 },
   premiumHeaderCentered: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 5 },
   moodBadge: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.95)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 12, elevation: 5 },
   moodLetter: { fontSize: 16, fontWeight: '900', letterSpacing: 2 },
   premiumDivider: { height: 2, backgroundColor: '#FFFFFF', opacity: 0.9, marginBottom: 3 },
-  premiumText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900', textAlign: 'center', lineHeight: 22, textShadowColor: 'rgba(0,0,0,0.1)', textShadowRadius: 3 },
+  premiumText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', textAlign: 'center', lineHeight: 22, textShadowColor: 'rgba(0,0,0,0.1)', textShadowRadius: 3 },
 
   // ==========================================
   // 6. YENİ NESİL NEON SAYAÇ (PRO TIMER)

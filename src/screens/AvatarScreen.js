@@ -7,8 +7,8 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { Image } from 'expo-image';
 
-// 🚀 YENİ: Ses ve Titreşim
-import { Audio } from 'expo-av';
+// 🚀 YENİ: Ses ve Titreşim (expo-audio'ya güncellendi)
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 
 const { width } = Dimensions.get('window');
@@ -27,20 +27,18 @@ export default function AvatarScreen({ navigation, route }) {
   // 🚀 SENIOR DOKUNUŞ: Seçili avatarın sürekli nefes alan (pulse) animasyonu
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Ses Hafızaları
-  const bubbleSound = useRef(null);
-  const tapSound = useRef(null);
+  // 🚀 YENİ SES HOOK'LARI EKLENDİ (Sayfa açıldığında hafızaya yüklenir)
+  const bubbleSound = useAudioPlayer(require('../../assets/sounds/bubble_pop.mp3'));
+  const tapSound = useAudioPlayer(require('../../assets/sounds/ui_tap.mp3'));
 
   useEffect(() => {
-    // Sesleri Yükle
+    // 🚀 SES AYARLARI GÜNCELLENDİ
     const setupAudio = async () => {
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      
-      const { sound: pop } = await Audio.Sound.createAsync(require('../../assets/sounds/bubble_pop.mp3'));
-      bubbleSound.current = pop;
-
-      const { sound: tap } = await Audio.Sound.createAsync(require('../../assets/sounds/ui_tap.mp3'));
-      tapSound.current = tap;
+      try {
+        await setAudioModeAsync({ playsInSilentMode: true });
+      } catch (error) {
+        console.log("Ses ayarı yapılamadı:", error);
+      }
     };
     setupAudio();
 
@@ -51,16 +49,17 @@ export default function AvatarScreen({ navigation, route }) {
         Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true })
       ])
     ).start();
-
-    return () => {
-      if (bubbleSound.current) bubbleSound.current.unloadAsync();
-      if (tapSound.current) tapSound.current.unloadAsync();
-    };
+    
+    // (Eski sistemdeki gibi ses unload yapmamıza gerek yok, hook bunu otomatik yönetir)
   }, []);
 
   const handleConfirm = async () => { 
     // 🚀 AKSİYON: Onay sesi ve titreşimi
-    if (tapSound.current) await tapSound.current.replayAsync();
+    try {
+      tapSound.seekTo(0);
+      tapSound.play();
+    } catch (e) { console.log(e); }
+    
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     const { nextScreen, extraParams } = route.params || {};
@@ -95,10 +94,14 @@ export default function AvatarScreen({ navigation, route }) {
     return (
       <TouchableOpacity 
         style={[styles.card, isSelected && styles.selectedCard]} 
-        onPress={async () => {
+        onPress={() => {
           setSelected(item);
           // 🚀 AKSİYON: Karakter seçildiğinde bubble pop sesi ve hafif titreşim
-          if (bubbleSound.current) await bubbleSound.current.replayAsync();
+          try {
+            bubbleSound.seekTo(0);
+            bubbleSound.play();
+          } catch (e) { console.log(e); }
+          
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }}
         activeOpacity={0.8} // Daha tok bir basım hissi
@@ -142,15 +145,15 @@ export default function AvatarScreen({ navigation, route }) {
 
       <View style={styles.showcase}>
         <Animated.View style={[styles.previewRing, { transform: [{ scale: pulseAnim }] }]}>
-  <Image 
-      source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${selected}&backgroundColor=ffffff` }} 
-      style={styles.previewImage} 
-      placeholder={require('../../assets/placeholderAvatar.png')} // defaultSource yerine placeholder
-      contentFit="contain" 
-      transition={200} // Seçim değiştikçe yumuşak geçiş yapar
-      cachePolicy="memory-disk" // Önizleme için de agresif önbellekleme
-   />
-</Animated.View>
+          <Image 
+              source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${selected}&backgroundColor=ffffff` }} 
+              style={styles.previewImage} 
+              placeholder={require('../../assets/placeholderAvatar.png')} 
+              contentFit="contain" 
+              transition={200} 
+              cachePolicy="memory-disk" 
+          />
+        </Animated.View>
         <Text style={styles.instructionText}>Masadaki yeni tarzını belirle</Text>
       </View>
 
@@ -166,7 +169,7 @@ export default function AvatarScreen({ navigation, route }) {
       <View style={styles.footerContainer}>
         <TouchableOpacity style={styles.premiumButton} onPress={handleConfirm} activeOpacity={0.9}>
           <LinearGradient 
-            colors={['#FF69EB', '#FF00D6']} // Renk akışı pürüzsüzleştirildi
+            colors={['#FF69EB', '#FF00D6']} 
             start={{ x: 0, y: 0 }} 
             end={{ x: 1, y: 1 }}
             style={styles.buttonGradient}

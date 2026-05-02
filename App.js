@@ -1,3 +1,4 @@
+import 'react-native-url-polyfill/auto'; // KESİNLİKLE EN ÜSTTE OLMALI
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -10,7 +11,6 @@ import HomeScreen from './src/screens/HomeScreen';
 import LobbyScreen from './src/screens/LobbyScreen'; 
 import LobbyRoom from './src/screens/LobbyRoom';
 import JoinRoom from './src/screens/JoinRoom'; 
-import MemeLibrary from './src/screens/MemeLibrary';
 import ScoreScreen from './src/screens/scoreScreen'; 
 import AvatarScreen from './src/screens/AvatarScreen';
 import RoomScreen from './src/screens/RoomScreen';
@@ -53,7 +53,6 @@ export default function App() {
             <Stack.Screen name="LobbyRoom" component={LobbyRoom} />
             <Stack.Screen name="RoomScreen" component={RoomScreen} /> 
             <Stack.Screen name="JoinRoom" component={JoinRoom} />
-            <Stack.Screen name="MemeLibrary" component={MemeLibrary} />
             <Stack.Screen name="ScoreScreen" component={ScoreScreen} />
              <Stack.Screen name="DisconnectModal" component={DisconnectModal} />
                 <Stack.Screen name="JokerModal" component={JokerModal} />

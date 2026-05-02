@@ -1,21 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated,ScrollView,useWindowDimensions, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons, Entypo } from '@expo/vector-icons';
-import { OFFICIAL_MEMES } from '../memeData';
 import { styles } from './RoomScreenStyles';
 import ScoreScreen from './scoreScreen';
 import JokerModal from './JokerModal';
 import { doc, updateDoc, increment, onSnapshot } from 'firebase/firestore';
 import { db, auth, database } from '../services/firebase';
 import { ref, onValue, update, onDisconnect, remove } from 'firebase/database'; 
-import { SITUATION_PROMPTS } from './situationPrompts';
 import DisconnectModal from './DisconnectModal'; 
-import { Audio } from 'expo-av';
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
+import { supabase } from '../services/supabaseClient'; 
 
 const hashStr = (str) => {
   let h = 0;
@@ -92,13 +91,12 @@ export default function RoomScreen({ navigation, route }) {
   const currentRoundRef = useRef(1);
   const initialHandDrawn = useRef(false);
 
+  const usedPromptsRef = useRef([]);
+  const usedMemesRef = useRef([]);
+
   const cleanMyName = myName?.trim();
   const me = players.find(p => p.name?.trim() === cleanMyName);
-  const amIHost = isHost || (players.length > 0 && players[0].name?.trim() === cleanMyName);
-
-  const tickSoundRef = useRef(null); 
-  const playTickSoundRef = useRef(null); 
-
+  const amIHost = isHost || (me?.isHost === true);
   const highlightAnim = useRef(new Animated.Value(0)).current; 
   const [highlightedCardId, setHighlightedCardId] = useState(null); 
 
@@ -106,106 +104,99 @@ export default function RoomScreen({ navigation, route }) {
   const [isFullInventoryVisible, setIsFullInventoryVisible] = useState(false); 
 
   const [isMuted, setIsMuted] = useState(false);
+  const [isRoomReady, setIsRoomReady] = useState(false);
 
-  useEffect(() => {
-    async function loadTimerSounds() {
-      try {
-        const { sound: voteSound } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/tick.mp3')
-        );
-        tickSoundRef.current = voteSound;
+  const [officialMemes, setOfficialMemes] = useState([]);
+  const [situationPrompts, setSituationPrompts] = useState([]);
 
-        const { sound: playSound } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/play_tick.mp3') 
-        );
-        playTickSoundRef.current = playSound;
-      } catch (e) {
-        console.log("Süre sesleri yüklenemedi", e);
-      }
-    }
-    loadTimerSounds();
-
-    return () => {
-      if (tickSoundRef.current) tickSoundRef.current.unloadAsync();
-      if (playTickSoundRef.current) playTickSoundRef.current.unloadAsync();
-    };
-  }, []);
-
-  const playSound = async (soundType) => {
-    try {
-      let soundAsset;
-      switch (soundType) {
-        case 'swoosh':
-          soundAsset = require('../../assets/sounds/swoosh.mp3'); 
-          break;
-        case 'tick':
-          soundAsset = require('../../assets/sounds/tick.mp3'); 
-          break;
-        case 'win':
-          soundAsset = require('../../assets/sounds/win.mp3'); 
-          break;
-        case 'fail':
-          soundAsset = require('../../assets/sounds/fail.mp3'); 
-          break;
-      case 'card_swap':
-          soundAsset = require('../../assets/sounds/card_swap.mp3'); 
-          break;
-        case 'iced_magic':
-          soundAsset = require('../../assets/sounds/iced_magic.mp3'); 
-          break;
-        default:
-          return;
-      }
-     const { sound } = await Audio.Sound.createAsync(soundAsset);
-      await sound.playAsync();
-      
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.didJustFinish) sound.unloadAsync();
-      });
-    } catch (error) {
-      console.log(`Ses efekti (${soundType}) çalınamadı:`, error);
-    }
-  };
+  // 🚀 SES YÜKLEMELERİ
+  const tickPlayer = useAudioPlayer(require('../../assets/sounds/tick.mp3'));
+  const playTickPlayer = useAudioPlayer(require('../../assets/sounds/play_tick.mp3'));
+  const swooshPlayer = useAudioPlayer(require('../../assets/sounds/swoosh.mp3'));
+  const winPlayer = useAudioPlayer(require('../../assets/sounds/win.mp3'));
+  const failPlayer = useAudioPlayer(require('../../assets/sounds/fail.mp3'));
+  const swapPlayer = useAudioPlayer(require('../../assets/sounds/card_swap.mp3'));
+  const icedPlayer = useAudioPlayer(require('../../assets/sounds/iced_magic.mp3'));
 
   useEffect(() => {
     const setupAudio = async () => {
       try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true, 
-          staysActiveInBackground: false,
-          shouldDuckAndroid: true,
-        });
+        await setAudioModeAsync({ playsInSilentMode: true });
       } catch (e) {
         console.log("Ses ayarı yapılamadı:", e);
       }
     };
     setupAudio();
-    
-    let unsubscribeUser = () => {};
-    const user = auth.currentUser;
-    if (user) {
-      const userRef = doc(db, 'users', user.uid);
-      unsubscribeUser = onSnapshot(userRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setJokerInventory({
-            joker_skip: data.joker_skip || 0,
-            joker_double: data.joker_double || 0,
-            joker_freeze: data.joker_freeze || 0
-          });
-          setUserStats({
-            coins: data.coins || 0,
-            diamonds: data.diamonds || 0
-          });
-        }
-      });
+  }, []);
+
+  const playSound = (soundType) => {
+    if (isMuted) return;
+
+    try {
+      switch (soundType) {
+        case 'swoosh': swooshPlayer.seekTo(0); swooshPlayer.play(); break;
+        case 'win': winPlayer.seekTo(0); winPlayer.play(); break;
+        case 'fail': failPlayer.seekTo(0); failPlayer.play(); break;
+        case 'card_swap': swapPlayer.seekTo(0); swapPlayer.play(); break;
+        case 'iced_magic': icedPlayer.seekTo(0); icedPlayer.play(); break;
+        default: return;
+      }
+    } catch (error) {
+      console.log(`Ses efekti çalınamadı:`, error);
     }
-    return () => unsubscribeUser();
+  };
+
+  const toggleSound = () => {
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+    
+    if (newMutedState) {
+      tickPlayer.pause(); 
+      playTickPlayer.pause();
+    }
+  };
+
+  // 🚀 DÜZELTME 2: İlk elde "Durum Bekleniyor" takılmasını kesin çözen özel takipçi
+  useEffect(() => {
+    if (amIHost && currentPrompt === "Durum bekleniyor..." && situationPrompts.length > 0 && roomId) {
+      let randomPrompt;
+      let attempts = 0;
+      do {
+        randomPrompt = situationPrompts[Math.floor(Math.random() * situationPrompts.length)];
+        attempts++;
+      } while (usedPromptsRef.current.includes(randomPrompt) && attempts < 50);
+      
+      update(ref(database, `rooms/${roomId}`), { currentPrompt: randomPrompt });
+    }
+  }, [amIHost, currentPrompt, situationPrompts, roomId]);
+
+  useEffect(() => {
+    const fetchSupabaseData = async () => {
+      try {
+        const { data: memesData, error: memesError } = await supabase.from('memes').select('*');
+        if (memesError) {
+           console.error("Memes Hatası:", JSON.stringify(memesError, null, 2)); 
+        } else {
+           setOfficialMemes(memesData || []);
+        }
+
+        const { data: situationsData, error: situationsError } = await supabase.from('situations').select('*');
+        if (situationsError) {
+           console.error("Situations Hatası:", JSON.stringify(situationsError, null, 2)); 
+        } else {
+          const prompts = situationsData.map(s => s.content);
+          setSituationPrompts(prompts);
+        }
+      } catch (error) {
+        console.error("Supabase veri çekme hatası:", JSON.stringify(error, null, 2));
+      }
+    };
+
+    fetchSupabaseData();
   }, []);
 
   useEffect(() => {
     const connectedRef = ref(database, ".info/connected");
-    
     const unsubscribeConnection = onValue(connectedRef, (snap) => {
       const isOnline = snap.val() === true;
       setIsConnected(isOnline);
@@ -233,7 +224,7 @@ export default function RoomScreen({ navigation, route }) {
     const lockScreen = async () => await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
     lockScreen();
     
-    if (roomId) {
+    if (roomId && officialMemes.length > 0 && situationPrompts.length > 0) { 
       const playersRef = ref(database, `rooms/${roomId}/players`);
       const unsubscribePlayers = onValue(playersRef, (snapshot) => {
         const data = snapshot.val();
@@ -251,6 +242,7 @@ export default function RoomScreen({ navigation, route }) {
           });
 
           setPlayers(uniquePlayers);
+          setIsRoomReady(true);
           
           setScores(prevScores => {
             const newScores = { ...prevScores };
@@ -259,23 +251,24 @@ export default function RoomScreen({ navigation, route }) {
           });
 
           if (!initialHandDrawn.current) {
-            const sortedPlayers = [...uniquePlayers].sort((a, b) => a.name.localeCompare(b.name));
-            const myIdx = sortedPlayers.findIndex(p => p.name?.trim() === cleanMyName);
-            
-            if (myIdx !== -1) {
-              const seed = hashStr(roomId || 'default');
-              const rand = mulberry32(seed);
-              const sharedDeck = [...OFFICIAL_MEMES].sort(() => rand() - 0.5);
-              const startIdx = (myIdx * 5) % Math.max(1, sharedDeck.length - 5);
-              setMyHand(sharedDeck.slice(startIdx, startIdx + 5));
-              initialHandDrawn.current = true;
+            let availableMemes = officialMemes.filter(m => !usedMemesRef.current.includes(m.url));
+            if (availableMemes.length < 5) {
+              usedMemesRef.current = [];
+              availableMemes = officialMemes;
             }
+            const shuffled = [...availableMemes].sort(() => Math.random() - 0.5);
+            const newHand = shuffled.slice(0, 5).map(c => {
+              usedMemesRef.current.push(c.url); 
+              return { ...c, id: Math.random().toString() };
+            });
+            setMyHand(newHand);
+            initialHandDrawn.current = true;
           }
         }
       });
 
       const roomRef = ref(database, `rooms/${roomId}`);
-     const unsubscribeRoom = onValue(roomRef, (snapshot) => {
+      const unsubscribeRoom = onValue(roomRef, (snapshot) => {
         const roomData = snapshot.val();
         if (roomData) {
           setIsTimeFrozen(roomData.isGlobalFrozen || false);
@@ -283,12 +276,14 @@ export default function RoomScreen({ navigation, route }) {
             currentRoundRef.current = roomData.round;
             startNextRound(); 
           }
-          if (roomData.currentPrompt) {
-            setCurrentPrompt(roomData.currentPrompt);
-          } else {
-            const randomPrompt = SITUATION_PROMPTS[Math.floor(Math.random() * SITUATION_PROMPTS.length)];
-            update(ref(database, `rooms/${roomId}`), { currentPrompt: randomPrompt });
-          }
+         if (roomData.currentPrompt) {
+              setCurrentPrompt(roomData.currentPrompt);
+              if (!usedPromptsRef.current.includes(roomData.currentPrompt)) {
+                usedPromptsRef.current.push(roomData.currentPrompt);
+              }
+            }
+            // 🚀 DÜZELTME 3: Hatalı "else if (amIHost)" bloğu tamamen silindi. 
+            // O işlemi artık yukarıya eklediğimiz 2. Adımdaki yeni useEffect güvenle yapıyor!
         }
       });
       
@@ -296,7 +291,7 @@ export default function RoomScreen({ navigation, route }) {
 
       return () => { unsubscribePlayers(); unsubscribeRoom(); ScreenOrientation.unlockAsync(); };
     }
-  }, [roomId]);
+  }, [roomId, officialMemes, situationPrompts]); 
 
   useEffect(() => {
     if (phase === 'PLAYING' && !isTimeFrozen) {
@@ -308,7 +303,6 @@ export default function RoomScreen({ navigation, route }) {
 
   useEffect(() => {
     let timer;
-    
     const totalPhaseTime = phase === 'READING' ? 5 : (phase === 'PLAYING' ? 7 : 10);
     
     Animated.timing(timeLeftAnim, {
@@ -319,10 +313,18 @@ export default function RoomScreen({ navigation, route }) {
 
     const activePhases = ['READING', 'PLAYING', 'VOTING'];
 
+    // 🚀 DÜZELTME: Veriler tamamen inmeden SÜREYİ ASLA BAŞLATMA!
+    const isFullyLoaded = isRoomReady && officialMemes.length > 0 && situationPrompts.length > 0;
+
+    // Eğer henüz yükleme ekranındaysak, sayacı burada durdur.
+    if (!isFullyLoaded) return; 
+
     if (timeLeft > 0 && activePhases.includes(phase) && !isTimeFrozen) { 
       
-      if (phase === 'PLAYING' && timeLeft === 3 && tickSoundRef.current) {
-        tickSoundRef.current.playFromPositionAsync(0);
+      // 🚀 ZAMANLAYICI SESİ (Düzeltildi)
+      if (phase === 'PLAYING' && timeLeft === 3 && !isMuted) {
+        tickPlayer.seekTo(0);
+        tickPlayer.play();
       }
 
       timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
@@ -330,9 +332,8 @@ export default function RoomScreen({ navigation, route }) {
    } else if (timeLeft === 0 && activePhases.includes(phase)) {
       timeLeftAnim.setValue(1);
       
-      if (tickSoundRef.current) {
-        tickSoundRef.current.stopAsync();
-      }
+      // 🚀 ZAMANLAYICI SESİNİ DURDUR
+      tickPlayer.pause();
       
       if (phase === 'READING') {
         setPhase('PLAYING');
@@ -360,12 +361,10 @@ export default function RoomScreen({ navigation, route }) {
       }
     }
     return () => clearTimeout(timer);
-  }, [timeLeft, phase, isTimeFrozen]);
+  }, [timeLeft, phase, isTimeFrozen, isRoomReady, officialMemes.length, situationPrompts.length]); // 🚀 
 
-
-// 🚀 DÜZELTME: Kart Atma Aşamasında AFK Olanları Host Üzerinden Oynatma
   useEffect(() => {
-    if (phase === 'WAITING_CARDS') {
+    if (phase === 'WAITING_CARDS' && officialMemes.length > 0) { 
       const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...');
       const allPlayed = actualPlayers.length > 0 && actualPlayers.every(p => p.playedCard);
       
@@ -375,11 +374,13 @@ export default function RoomScreen({ navigation, route }) {
         const hostTimeout = setTimeout(() => {
           if (amIHost) {
             actualPlayers.forEach(p => {
-              if (!p.playedCard) {
-                // 🚀 DÜZELTME: Her defasında desteden yepyeni bir kart çek ve ID'sini benzersiz yap
-                const randomMeme = OFFICIAL_MEMES[Math.floor(Math.random() * OFFICIAL_MEMES.length)];
+             if (!p.playedCard) {
+                let availableMemes = officialMemes.filter(m => !usedMemesRef.current.includes(m.url));
+                if(availableMemes.length === 0) availableMemes = officialMemes;
+                const randomMeme = availableMemes[Math.floor(Math.random() * availableMemes.length)]; 
+                usedMemesRef.current.push(randomMeme.url);
+
                 const autoCard = { ...randomMeme, id: Math.random().toString() };
-                
                 update(ref(database, `rooms/${roomId}/players/${p.id}`), { playedCard: autoCard });
               }
             });
@@ -396,10 +397,8 @@ export default function RoomScreen({ navigation, route }) {
         };
       }
     }
-  }, [phase, players, amIHost, roomId]);
+  }, [phase, players, amIHost, roomId, officialMemes]);
 
-  // 🚀 DÜZELTME: Oylama Aşamasında AFK Olanları Host Üzerinden Oynatma
-  // 🚀 DÜZELTME: Oylama Aşamasında Botların ve AFK Olanların Rastgele Oy Atması
   useEffect(() => {
     if (phase === 'WAITING_VOTES') {
       const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...');
@@ -408,19 +407,14 @@ export default function RoomScreen({ navigation, route }) {
       if (allVoted) {
         calculateResults();
       } else {
-        // Eğer oylamayan (veya Bot olan) kaldıysa Host onlar adına tam rastgele oy atar.
         const hostTimeout = setTimeout(() => {
           if (amIHost) {
             actualPlayers.forEach(p => {
               if (!p.votedFor && stateRefs.current.playedCards.length > 0) {
-                // Kendi kartı HARİÇ masadaki diğer tüm kartları bir havuza al
                 const opponentCards = stateRefs.current.playedCards.filter(c => c.owner !== p.name);
                 
                 if (opponentCards.length > 0) {
-                  // Masadaki kartları tamamen rastgele karıştır
                   const shuffledOpponents = [...opponentCards].sort(() => Math.random() - 0.5);
-                  
-                  // İlk sıradaki karta oy ver (Bot veya Gerçek Oyuncu fark etmeksizin)
                   const randomCard = shuffledOpponents[0];
                   update(ref(database, `rooms/${roomId}/players/${p.id}`), { votedFor: randomCard.id });
                 }
@@ -449,9 +443,7 @@ export default function RoomScreen({ navigation, route }) {
         console.log("Oryantasyon kilitlenemedi:", error);
       }
     };
-
     toggleOrientation();
-
     return () => {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     };
@@ -461,11 +453,9 @@ export default function RoomScreen({ navigation, route }) {
     const unsubscribe = navigation.addListener('focus', () => {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
     });
-
     const unsubscribeBlur = navigation.addListener('blur', () => {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     });
-
     return () => {
       unsubscribe();
       unsubscribeBlur();
@@ -489,13 +479,15 @@ export default function RoomScreen({ navigation, route }) {
     }
 
     switch (jokerId) {
-      case 'joker_skip':
+    case 'joker_skip':
         playSound('card_swap');
+        let availableSkipMemes = officialMemes.filter(m => !usedMemesRef.current.includes(m.url));
+        if(availableSkipMemes.length === 0) availableSkipMemes = officialMemes;
+        const randomCard = availableSkipMemes[Math.floor(Math.random() * availableSkipMemes.length)]; 
+        usedMemesRef.current.push(randomCard.url);
+        
         const newCardId = Math.random().toString();
-        const randomCard = OFFICIAL_MEMES[Math.floor(Math.random() * OFFICIAL_MEMES.length)];
-        
         setMyHand(prev => prev.map(c => c.id === selectedCard ? {...randomCard, id: newCardId} : c));
-        
         setHighlightedCardId(newCardId);
         triggerHighlight();
         setSelectedCard(null);
@@ -504,17 +496,24 @@ export default function RoomScreen({ navigation, route }) {
       case 'joker_double':
         playSound('card_swap');
         const currentHandSize = myHand.length;
-        const newHand = [...OFFICIAL_MEMES]
+        let availableDoubleMemes = officialMemes.filter(m => !usedMemesRef.current.includes(m.url));
+        if(availableDoubleMemes.length < currentHandSize) {
+          usedMemesRef.current = [];
+          availableDoubleMemes = officialMemes;
+        }
+        const newHand = [...availableDoubleMemes] 
           .sort(() => Math.random() - 0.5)
           .slice(0, currentHandSize)
-          .map(c => ({ ...c, id: Math.random().toString() }));
-        
+          .map(c => {
+             usedMemesRef.current.push(c.url);
+             return { ...c, id: Math.random().toString() };
+          });
         setMyHand(newHand);
         setHighlightedCardId('ALL');
         triggerHighlight();
         break;
 
-     case 'joker_freeze':
+      case 'joker_freeze':
         playSound('iced_magic');
         update(ref(database, `rooms/${roomId}`), { isGlobalFrozen: true });
         setTimeout(() => {
@@ -522,6 +521,7 @@ export default function RoomScreen({ navigation, route }) {
         }, 5000);
         break;
     }
+    
     setIsJokerMenuVisible(false);
   };
 
@@ -543,9 +543,8 @@ export default function RoomScreen({ navigation, route }) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       playSound('swoosh');
 
-      if (tickSoundRef.current) {
-        tickSoundRef.current.stopAsync();
-      }
+      // 🚀 OYUNCU KARTI ATINCA SÜRE SESİ SUSSUN
+      tickPlayer.pause();
 
       const cardToPlay = stateRefs.current.myHand.find(c => c.id === targetCardId);
       if (!cardToPlay) return;
@@ -570,9 +569,7 @@ export default function RoomScreen({ navigation, route }) {
           id: p.playedCard.id + '_' + p.name 
       }));
 
-      // 🚀 DÜZELTME: Kartları ID'ye göre sabit sıralamak yerine rastgele karıştırıyoruz!
       const shuffledCards = tableCards.sort(() => Math.random() - 0.5);
-
       setPlayedCards(shuffledCards);
       
       setPhase('VOTING');
@@ -654,7 +651,6 @@ export default function RoomScreen({ navigation, route }) {
 
       setWinnerName(bannerText);
 
-      // 🚀 DÜZELTME 1: Raundu kazanana sadece ses çal, kalp verme.
       if (isMeWinner) {
         playSound('win');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -667,17 +663,14 @@ export default function RoomScreen({ navigation, route }) {
 
       Animated.spring(announcementAnim, { toValue: 1, useNativeDriver: true }).start();
 
-      // 🚀 DÜZELTME 2: Oyun Bitti mi kontrolü (Eldeki kartlar bittiyse oyun bitmiştir)
       const isGameOver = stateRefs.current.myHand.length === 0;
 
       if (isGameOver) {
-        // Oyun bittiyse, genel toplam skorları hesapla
         const finalScores = { ...scores };
         Object.keys(roundPoints).forEach(owner => {
           finalScores[owner] = (finalScores[owner] || 0) + roundPoints[owner];
         });
 
-        // Masadaki en yüksek toplam puanı bul
         let gameMaxScore = 0;
         let gameWinners = [];
         Object.keys(finalScores).forEach(owner => {
@@ -689,7 +682,6 @@ export default function RoomScreen({ navigation, route }) {
           }
         });
 
-        // 🏆 Eğer TÜM OYUNU genel skorda SEN KAZANDIYSAN Kalp Ver!
         if (gameWinners.includes(cleanMyName)) {
           const user = auth.currentUser;
           if (user) {
@@ -700,7 +692,6 @@ export default function RoomScreen({ navigation, route }) {
           }
         }
       } else {
-        // Oyun bitmediyse, raund bittikten 4 saniye sonra yeni el başlar
         setTimeout(() => {
           if (amIHost) {
             handleHostNewRound();
@@ -710,50 +701,50 @@ export default function RoomScreen({ navigation, route }) {
     };
 
   const handleHostNewRound = () => {
-    if (amIHost && roomId) {
+    if (amIHost && roomId && situationPrompts.length > 0) { 
       const nextRound = currentRoundRef.current + 1;
-      const randomPrompt = SITUATION_PROMPTS[Math.floor(Math.random() * SITUATION_PROMPTS.length)];
       
-      // 🚀 DÜZELTME: Yeni raunt başlarken Host herkesin masasını ve oylarını tertemiz yapar
-      const updates = { 
-        round: nextRound,
-        currentPrompt: randomPrompt 
-      };
-
+      let randomPrompt;
+      let attempts = 0;
+      do {
+        randomPrompt = situationPrompts[Math.floor(Math.random() * situationPrompts.length)];
+        attempts++;
+      } while (usedPromptsRef.current.includes(randomPrompt) && attempts < 50);
+      
+      const newRoundUpdates = { round: nextRound, currentPrompt: randomPrompt };
       players.forEach(p => {
         if (p.id) {
-          updates[`players/${p.id}/playedCard`] = null;
-          updates[`players/${p.id}/votedFor`] = null;
+          newRoundUpdates[`players/${p.id}/playedCard`] = null; 
+          newRoundUpdates[`players/${p.id}/votedFor`] = null; 
         }
       });
-
-      update(ref(database, `rooms/${roomId}`), updates);
+      update(ref(database, `rooms/${roomId}`), newRoundUpdates); 
     }
   };
+  
   const startNextRound = () => {
       if (me?.id) { 
         update(ref(database, `rooms/${roomId}/players/${me.id}`), { playedCard: null, votedFor: null }); 
       }
       
-      if (stateRefs.current.myHand.length === 0) {
+     if (stateRefs.current.myHand.length === 0 && officialMemes.length > 0) { 
         setScores(prevScores => {
           const resetScores = {};
-          Object.keys(prevScores).forEach(name => {
-            resetScores[name] = 0;
-          });
+          Object.keys(prevScores).forEach(name => { resetScores[name] = 0; });
           return resetScores;
         });
 
-        const sortedPlayers = [...players].sort((a, b) => a.name.localeCompare(b.name));
-        const myIdx = sortedPlayers.findIndex(p => p.name?.trim() === cleanMyName);
-        const safeIdx = myIdx !== -1 ? myIdx : 0;
-        
-        const seed = hashStr(roomId || 'default') + currentRoundRef.current;
-        const rand = mulberry32(seed);
-        const sharedDeck = [...OFFICIAL_MEMES].sort(() => rand() - 0.5);
-        
-        const startIdx = (safeIdx * 5) % Math.max(1, sharedDeck.length - 5);
-        setMyHand(sharedDeck.slice(startIdx, startIdx + 5));
+        let availableMemes = officialMemes.filter(m => !usedMemesRef.current.includes(m.url));
+        if (availableMemes.length < 5) {
+          usedMemesRef.current = [];
+          availableMemes = officialMemes;
+        }
+        const shuffled = [...availableMemes].sort(() => Math.random() - 0.5);
+        const newHand = shuffled.slice(0, 5).map(c => {
+          usedMemesRef.current.push(c.url);
+          return { ...c, id: Math.random().toString() };
+        });
+        setMyHand(newHand);
       }
       
      setHasPlayed(false);
@@ -805,24 +796,54 @@ export default function RoomScreen({ navigation, route }) {
   const opponentPositions = [styles.topPlayer, styles.leftPlayer, styles.rightPlayer];
   const opponentColors = ["#E5E7EB", "#E5E7EB", "#E5E7EB"];
 
-  const toggleSound = async () => {
-    try {
-      const newMutedState = !isMuted;
-      setIsMuted(newMutedState);
-      
-      await Audio.setIsEnabledAsync(!newMutedState);
-      
-      if (newMutedState) {
-        if (tickSoundRef.current) await tickSoundRef.current.setVolumeAsync(0);
-        if (playTickSoundRef.current) await playTickSoundRef.current.setVolumeAsync(0);
-      } else {
-        if (tickSoundRef.current) await tickSoundRef.current.setVolumeAsync(1);
-        if (playTickSoundRef.current) await playTickSoundRef.current.setVolumeAsync(1);
-      }
-    } catch (error) {
-      console.log("Ses durumu değiştirilirken hata oluştu:", error);
-    }
-  };
+ // 🚀 YENİ: Temaya (Beyaz, Pembe, Turuncu) Uygun "Senior" Yükleme Ekranı
+  if (!isRoomReady || officialMemes.length === 0 || situationPrompts.length === 0) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA' }]}>
+        <StatusBar hidden />
+        
+        {/* 🎨 Arka Plan Süslemeleri (Hafif ve Premium) */}
+        <View style={{ position: 'absolute', top: '15%', right: '10%', opacity: 0.05 }}>
+           <Ionicons name="sparkles" size={100} color="#FF00D6" />
+        </View>
+        <View style={{ position: 'absolute', bottom: '15%', left: '10%', opacity: 0.05 }}>
+           <Ionicons name="layers" size={120} color="#FF8A00" />
+        </View>
+
+        {/* 🃏 Merkez Animasyonlu Şık Kutu (Hafif Eğik 3D Hissi) */}
+        <View style={{
+          width: 110, height: 110, borderRadius: 32, backgroundColor: '#FFF',
+          justifyContent: 'center', alignItems: 'center', marginBottom: 35,
+          shadowColor: '#FF00D6', shadowOffset: { width: 0, height: 12 }, 
+          shadowOpacity: 0.25, shadowRadius: 25, elevation: 15,
+          borderWidth: 1.5, borderColor: 'rgba(255, 0, 214, 0.15)',
+          transform: [{ rotate: '-8deg' }] // Hafif eğik, dinamik görünüm
+        }}>
+           <LinearGradient 
+              colors={['rgba(255, 0, 214, 0.08)', 'rgba(255, 138, 0, 0.08)']} 
+              style={[StyleSheet.absoluteFillObject, { borderRadius: 32 }]} 
+           />
+          {/* İç ikon zıt yöne eğik ki düz dursun */}
+          <Ionicons name="layers" size={50} color="#FF00D6" style={{ transform: [{ rotate: '8deg' }] }} />
+        </View>
+
+        <ActivityIndicator size="large" color="#FF8A00" />
+        
+        <Text style={{ 
+          color: '#1F2937', fontSize: 18, fontWeight: '900', marginTop: 28, 
+          letterSpacing: 4, textTransform: 'uppercase'
+        }}>
+          Masa Kuruluyor
+        </Text>
+        <Text style={{
+          color: '#9CA3AF', fontSize: 12, fontWeight: '800', marginTop: 8,
+          letterSpacing: 1.5
+        }}>
+          KARTLAR DAĞITILIYOR...
+        </Text>
+      </View>
+    );
+  }
 
   return (
       <View style={styles.container}>
@@ -876,7 +897,6 @@ export default function RoomScreen({ navigation, route }) {
               style={{ 
                 textShadowColor: 'rgba(255, 59, 48, 0.5)', 
                 textShadowRadius: 8
-                // transform komutunu buradan sildik ve yukarıdaki View'a taşıdık
               }} 
             />
           </View>
@@ -1009,24 +1029,56 @@ export default function RoomScreen({ navigation, route }) {
 
             <View style={styles.centerArea}>
               {phase === 'READING' && (
-                <Animated.View style={[styles.situationCardWrapper, { transform: [{ scale: popAnim }, { scale: cardScale }, { rotateY: cardRotate }] }]}>
-                  <View style={styles.premiumSituationCard}>
-                    <LinearGradient colors={['rgba(255,255,255,0.7)', 'rgba(255,255,255,0)']} style={styles.glossyHighlight} />
-                    <View style={styles.cardInnerContent}>
-                      <View style={styles.premiumHeaderCentered}>
-                        <View style={styles.moodBadge}>
-                          <Text style={[styles.moodLetter, { color: '#FF69EB' }]}>M</Text>
-                          <Text style={[styles.moodLetter, { color: '#FF86C8' }]}>O</Text>
-                          <Text style={[styles.moodLetter, { color: '#FF8001' }]}>O</Text>
-                          <Text style={[styles.moodLetter, { color: '#F53BDC' }]}>D</Text>
-                        </View>
-                      </View>
-                      <View style={styles.premiumDivider} />
-                      <Text style={styles.premiumText}>{currentPrompt}</Text>
-                    </View>
-                  </View>
-                </Animated.View>
-              )}
+              <Animated.View style={[styles.situationCardWrapper, { transform: [{ scale: popAnim }, { scale: cardScale }, { rotateY: cardRotate }] }]}>
+  <View style={styles.premiumSituationCard}>
+    {/* 🚀 GRİLİK (glossyHighlight) KALDIRILDI: Daha temiz bir görünüm için o satırı sildik. */}
+    
+    <View style={styles.cardInnerContent}>
+      <View style={styles.premiumHeaderCentered}>
+        <View style={styles.moodBadge}>
+          <Text style={[styles.moodLetter, { color: '#FF69EB' }]}>M</Text>
+          <Text style={[styles.moodLetter, { color: '#FF86C8' }]}>O</Text>
+          <Text style={[styles.moodLetter, { color: '#FF8001' }]}>O</Text>
+          <Text style={[styles.moodLetter, { color: '#F53BDC' }]}>D</Text>
+        </View>
+      </View>
+
+      <View style={styles.premiumDivider} />
+
+      {/* KAYDIRILABİLİR METİN ALANI */}
+      <View style={{ flex: 1, overflow: 'hidden' }}>
+        <ScrollView 
+          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingBottom: 20 }}
+          showsVerticalScrollIndicator={true}
+          persistentScrollbar={true}
+          indicatorStyle="black" // Kart rengine göre daha belirgin olması için siyah yaptık
+        >
+          <Text 
+            style={styles.premiumText}
+            adjustsFontSizeToFit={true}
+            minimumFontScale={0.8}
+          >
+            {currentPrompt}
+          </Text>
+        </ScrollView>
+
+        {/* ALTTAKİ HAFİF GEÇİŞ: Sadece aşağıda yazı olduğunu belli etmek için çok ince bir dokunuş */}
+        <LinearGradient 
+          colors={['transparent', 'git statusrgba(255, 209, 163, 0.05)', 'rgba(255, 209, 163, 0.8)']} 
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 25,
+          }} 
+          pointerEvents="none" 
+        />
+      </View>
+    </View>
+  </View>
+</Animated.View>
+                          )}
 
               {(phase === 'PLAYING' || phase === 'WAITING_CARDS') && (
                 <View style={styles.proTimerContainer}>
@@ -1075,14 +1127,13 @@ export default function RoomScreen({ navigation, route }) {
                           disabled={card.isMine || votedCardId !== null || phase === 'WAITING_VOTES' || phase === 'ROUND_ENDED'} onPress={() => handleVote(card.id)} activeOpacity={0.8}
                         >
                          <Image 
-                            source={{ uri: card.url }} 
-                            style={styles.memeImage} 
-                            contentFit="cover" 
-                            transition={400} 
-                            priority="high" 
-                            cachePolicy="memory-disk" 
-                            placeholder={require('../../assets/placeholderAvatar.png')} 
-                        />
+                              source={{ uri: card.url }} 
+                              style={[styles.memeImage, { backgroundColor: 'rgba(255, 0, 214, 0.05)' }]} 
+                              contentFit="cover" 
+                              transition={400} 
+                              priority="high" 
+                              cachePolicy="memory-disk" 
+                            />
                           {card.isMine && (
                             <View style={styles.myCardOverlay}>
                               <Ionicons name="lock-closed" size={16} color="white" />

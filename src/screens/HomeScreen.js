@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, SafeAreaView, TouchableOpacity, StatusBar, ScrollView, Dimensions, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StatusBar, ScrollView, Dimensions, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { doc, onSnapshot } from 'firebase/firestore'; 
 import { db, auth } from '../services/firebase';
@@ -10,9 +11,8 @@ import { styles, palet } from './HomeScreenStyles';
 import DailyMission from './DailyMission';
 import RandomMatchScreen from './RandomMatchScreen';
 import { Image } from 'expo-image';
-
-// 🚀 YENİ EKLENENLER: SES VE TİTREŞİM
-import { Audio } from 'expo-av';
+// 1. YENİ EKLENEN IMPORTLAR: Ses işlemleri için yeni useAudioPlayer ve setAudioModeAsync kullanıyoruz.
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 
 import { useFonts } from 'expo-font';
@@ -38,42 +38,35 @@ export default function HomeScreen({ navigation }) {
     Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold, Nunito_900Black, Nunito_800ExtraBold_Italic,
   });
 
-  
-const playHomeSound = async (soundType) => {
-  try {
-    const soundAsset = soundType === 'money' 
-      ? require('../../assets/sounds/cash.mp3') 
-      : require('../../assets/sounds/ui_tap.mp3');
-    
-    // 🚀 unloadAsync kullanarak hafızayı temiz tutan ve daha stabil yükleme yapan yapı
-    const { sound } = await Audio.Sound.createAsync(
-      soundAsset,
-      { shouldPlay: true } // Yüklenir yüklenmez çal
-    );
+  // 2. YENİ SES HOOK'LARI: Ses sayfa açıldığında hafızaya yüklenir.
+  const moneySound = useAudioPlayer(require('../../assets/sounds/cash.mp3'));
+  const tapSound = useAudioPlayer(require('../../assets/sounds/ui_tap.mp3'));
 
-    sound.setOnPlaybackStatusUpdate(async (status) => {
-      if (status.didJustFinish) {
-        await sound.unloadAsync();
-      }
-    });
-  } catch (error) {
-    console.log("Ses çalma hatası:", error);
-  }
-};
-  useEffect(() => {
-
-    const configureAudio = async () => {
+  // 3. YENİ VE HIZLI playHomeSound FONKSİYONU
+  const playHomeSound = (soundType) => {
     try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: true,
-      });
-    } catch (e) {
-      console.log("Audio ayarı hatası:", e);
+      if (soundType === 'money') {
+        moneySound.seekTo(0);
+        moneySound.play();
+      } else {
+        tapSound.seekTo(0);
+        tapSound.play();
+      }
+    } catch (error) {
+      console.log("Ses çalma hatası:", error);
     }
   };
-  configureAudio();
+
+  useEffect(() => {
+    // 4. SES AYARLARI GÜNCELLENDİ (Eski Audio kütüphanesi referansı kaldırıldı)
+    const configureAudio = async () => {
+        try {
+            await setAudioModeAsync({ playsInSilentMode: true });
+        } catch (error) {
+            console.log("Ses ayarı yapılamadı:", error);
+        }
+    };
+    configureAudio();
 
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     Animated.timing(fadeAnim, { toValue: 1, duration: 1000, useNativeDriver: true }).start();
@@ -114,8 +107,7 @@ const playHomeSound = async (soundType) => {
 
   if (!fontsLoaded) return null; 
 
-  
-const onPressIn = () => {
+  const onPressIn = () => {
     Animated.spring(scalePress, { toValue: 0.95, useNativeDriver: true }).start();
   };
 

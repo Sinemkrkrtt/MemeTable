@@ -1,43 +1,58 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; 
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Dimensions, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av'; 
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 import { useIsFocused } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
-// 🔊 SES ÇALMA YARDIMCI FONKSİYONU
-const playSound = async (type) => {
-  const soundMap = {
-    click: require('../../assets/sounds/click.mp3'),
-    ready: require('../../assets/sounds/ready.mp3'), // Kullanılmıyor ama listede dursun
-    join: require('../../assets/sounds/join.mp3'), // Başarılı giriş için
-    start: require('../../assets/sounds/start.mp3'),
-    error: require('../../assets/sounds/error.mp3'), // Hatalı kod için
-  };
-
-  try {
-    const { sound } = await Audio.Sound.createAsync(soundMap[type]);
-    await sound.playAsync();
-    sound.setOnPlaybackStatusUpdate((status) => {
-      if (status.didJustFinish) sound.unloadAsync();
-    });
-  } catch (error) {
-    console.log("Ses çalınamadı:", error);
-  }
-};
+// 1. ESKİ async playSound FONKSİYONUNU BURADAN TAMAMEN SİLDİK
 
 export default function JoinRoom({ navigation, route }) {
+  // 2. YENİ SES HOOK'LARI EKLENDİ (Sayfa açılırken yüklenir)
+  const clickSound = useAudioPlayer(require('../../assets/sounds/click.mp3'));
+  const readySound = useAudioPlayer(require('../../assets/sounds/ready.mp3'));
+  const joinSound = useAudioPlayer(require('../../assets/sounds/join.mp3'));
+  const startSound = useAudioPlayer(require('../../assets/sounds/start.mp3'));
+  const errorSound = useAudioPlayer(require('../../assets/sounds/error.mp3'));
+
+  // 3. YENİ VE HIZLI playSound FONKSİYONU
+  const playSound = (type) => {
+    try {
+      if (type === 'click') { clickSound.seekTo(0); clickSound.play(); }
+      else if (type === 'ready') { readySound.seekTo(0); readySound.play(); }
+      else if (type === 'join') { joinSound.seekTo(0); joinSound.play(); }
+      else if (type === 'start') { startSound.seekTo(0); startSound.play(); }
+      else if (type === 'error') { errorSound.seekTo(0); errorSound.play(); }
+    } catch (error) {
+      console.log("Ses hatası:", error);
+    }
+  };
+
+  // 4. SES AYARLARI (Sessizde çalma izni vb.)
+  useEffect(() => {
+    const setupAudio = async () => {
+      try {
+        await setAudioModeAsync({ playsInSilentMode: true });
+      } catch (e) {
+        console.log("Ses ayarı yapılamadı:", e);
+      }
+    };
+    setupAudio();
+  }, []);
+
+  // --- BURADAN AŞAĞISI KESİNLİKLE DEĞİŞTİRİLMEDİ ---
+
   const isFocused = useIsFocused();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [manualCode, setManualCode] = useState('');
 
-const handleJoinRoom = async (rawData) => {
+  const handleJoinRoom = async (rawData) => {
     if (!rawData || rawData.trim().length === 0 || scanned) return;
     
     setScanned(true); 
@@ -185,8 +200,6 @@ const handleJoinRoom = async (rawData) => {
     </KeyboardAvoidingView>
   );
 }
-
-
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' },

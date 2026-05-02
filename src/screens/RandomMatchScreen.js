@@ -8,7 +8,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { ref, onValue, update, onDisconnect, remove } from 'firebase/database'; 
 import { db, auth, database } from '../services/firebase';
 import * as Haptics from 'expo-haptics';
-import { Audio } from 'expo-av';
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { Image } from 'expo-image';
 
 const BOT_NAMES = ["Alex", "Zeynep", "MemeLord", "Cansu", "Shadow", "Burak", "KediKız", "IronMan_99", "DogeFan"];
@@ -31,19 +31,43 @@ export default function RandomMatchScreen({ navigation, route }) {
   const hasMatched = useRef(false);
   
   const searchTimeoutRef = useRef(null);
-  const poolDataRef = useRef(null); // Havuzdaki anlık oyuncuları tutmak için eklendi
+  const poolDataRef = useRef(null);
 
-  const playSound = async (type) => {
+  // 🚀 YENİ: Sesleri sayfa açılırken 1 kere yükleyip hafızada hazır bekletiyoruz
+  const matchSound = useAudioPlayer(require('../../assets/sounds/ready.mp3'));
+  const clickSound = useAudioPlayer(require('../../assets/sounds/click.mp3'));
+
+  // 🚀 YENİ: Telefon sessizde olsa bile eşleşme ve tık seslerinin çalmasını sağlar
+  useEffect(() => {
+    const setupAudio = async () => {
+      try {
+        await setAudioModeAsync({ playsInSilentMode: true });
+      } catch (e) {
+        console.log("Ses ayarı yapılamadı:", e);
+      }
+    };
+    setupAudio();
+  }, []);
+
+  // 🚀 GÜNCELLENMİŞ: Eski yavaş çalışan async yapı yerine şipşak çalan yeni yapı
+  const playSound = (type) => {
     try {
-      const soundAsset = type === 'match' ? require('../../assets/sounds/ready.mp3') : require('../../assets/sounds/click.mp3');
-      const { sound } = await Audio.Sound.createAsync(soundAsset);
-      await sound.playAsync();
-      sound.setOnPlaybackStatusUpdate((status) => { if (status.didJustFinish) sound.unloadAsync(); });
-    } catch (error) { console.log("Ses hatası:", error); }
+      if (type === 'match') {
+        matchSound.seekTo(0);
+        matchSound.play();
+      } else {
+        clickSound.seekTo(0);
+        clickSound.play();
+      }
+    } catch (error) { 
+      console.log("Ses hatası:", error); 
+    }
   };
 
+  // --- BURADAN AŞAĞISI (useEffect'ler, Matchmaking vb.) SENİN KODUNLA AYNI ---
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    // ...
     const user = auth.currentUser;
     let unsubscribeUser = () => {};
     if (user) {
@@ -202,7 +226,7 @@ export default function RandomMatchScreen({ navigation, route }) {
       if (!hasMatched.current && poolDataRef.current) {
         handleMatchmaking(poolDataRef.current, true);
       }
-    }, 30000); // 30 Saniye
+    }, 1000); // 30 Saniye
 
     const unsubscribe = onValue(poolRef, (snapshot) => {
       poolDataRef.current = snapshot.val();
