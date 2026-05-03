@@ -9,7 +9,6 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getDatabase } from "firebase/database";
 
-// 🔐 Konfigürasyon (Senin bilgilerin)
 const firebaseConfig = {
   apiKey: "AIzaSyC2AGoRD3uwkOzSGlfNngnGHVwrHKiPUws",
   authDomain: "memetable-official.firebaseapp.com",
@@ -24,10 +23,8 @@ const firebaseConfig = {
 let app;
 let auth;
 
-// 🚀 HOT RELOAD & INITIALIZATION KORUMASI
 if (getApps().length === 0) {
   app = initializeApp(firebaseConfig);
-  // Auth'u oturum kalıcılığı (Persistence) ile başlatıyoruz
   auth = initializeAuth(app, {
     persistence: getReactNativePersistence(AsyncStorage)
   });
@@ -36,10 +33,8 @@ if (getApps().length === 0) {
   auth = getAuth(app); 
 }
 
-// 🛠 Servisleri Başlat
-const db = getFirestore(app);      // Kullanıcı verileri, jokerler, paralar (Firestore)
-const storage = getStorage(app);   // Avatarlar ve görseller (Storage)
-const database = getDatabase(app); // Canlı maç verileri (Realtime Database)
+const db = getFirestore(app);      
+const storage = getStorage(app);  
+const database = getDatabase(app); 
 
-// Hepsini güvenle dışa aktar
 export { app, auth, db, storage, database };

@@ -5,7 +5,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { doc, updateDoc, increment, getDoc } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { Image } from 'expo-image';
-// 1. YENİ EKLENEN IMPORTLAR: Ses işlemleri için yeni useAudioPlayer ve setAudioModeAsync kullanıyoruz.
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 
@@ -23,22 +22,23 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [currentReward, setCurrentReward] = useState(REWARDS[0]);
   const [isClaiming, setIsClaiming] = useState(false);
-  
-  // 🚀 YENİ EKLENEN STATE'LER
   const [localHearts, setLocalHearts] = useState(wonHearts);
   const [isBoxOpened, setIsBoxOpened] = useState(false);
-  
   const rewardOpacity = useRef(new Animated.Value(0)).current;
   const boxAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const palet = { vibrant: '#FF00D6', orange: '#FF8A00', gray: '#D1D5DB' ,purple: 'rgb(199, 13, 199)', gold: '#FFD700',peach: '#FFA3A5'};
+  const palet = {
+     vibrant: '#FF00D6', 
+     orange: '#FF8A00',
+      gray: '#D1D5DB',
+      purple: 'rgb(199, 13, 199)', 
+      gold: '#FFD700',
+      peach: '#FFA3A5'};
 
-  // 2. YENİ SES HOOK'U: Ses sayfa açıldığında hafızaya yüklenir.
   const revealSound = useAudioPlayer(require('../../assets/sounds/magic_reveal.mp3'));
 
-  // 3. YENİ VE HIZLI playRevealSound FONKSİYONU
   const playRevealSound = () => {
     try {
       revealSound.seekTo(0);
@@ -49,7 +49,6 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
   };
 
   useEffect(() => {
-    // 4. SES AYARLARI GÜNCELLENDİ (Eski Audio kütüphanesi referansı kaldırıldı)
     const setupAudio = async () => {
         try {
             await setAudioModeAsync({ playsInSilentMode: true });
@@ -64,7 +63,6 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
     }
   }, [isModalVisible]);
 
-  // 🚀 GÜNLÜK SIFIRLAMA KONTROLÜ (DAILY RESET LOGIC)
   useEffect(() => {
     const checkDailyReset = async () => {
       const user = auth.currentUser;
@@ -75,10 +73,8 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
       
       if (snap.exists()) {
         const data = snap.data();
-        // Bugünün tarihini YYYY-MM-DD formatında al
         const today = new Date().toISOString().split('T')[0]; 
 
-        // Eğer veritabanındaki tarih bugün değilse YENİ GÜN gelmiş demektir!
         if (data.lastMissionDate !== today) {
           await updateDoc(userRef, {
             wonHearts: 0,
@@ -89,7 +85,6 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
           setIsBoxOpened(false);
           if (onRefreshUser) onRefreshUser();
         } else {
-          // Aynı günse mevcut durumu yükle
           setLocalHearts(data.wonHearts || 0);
           setIsBoxOpened(data.isBoxOpened || false);
         }
@@ -97,7 +92,7 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
     };
     
     checkDailyReset();
-  }, [wonHearts]); // wonHearts proptan her güncellendiğinde senkronize et
+  }, [wonHearts]);
 
   useEffect(() => {
     if (localHearts >= 3 && !isBoxOpened) {
@@ -141,7 +136,7 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
         
         let updateData = { 
           wonHearts: 0, 
-          isBoxOpened: true, // 🚀 DÜZELTME: Kutu artık "AÇILDI" olarak işaretlenecek (false idi)
+          isBoxOpened: true, 
           lastMissionDate: today
         };
 
@@ -158,7 +153,7 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
         }
 
         await updateDoc(userRef, updateData);
-        setIsBoxOpened(true); // UI'ı hemen güncelle
+        setIsBoxOpened(true);
         setLocalHearts(0);
         
         if (onRefreshUser) onRefreshUser();
@@ -210,7 +205,6 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
           </View>
           
           <View style={styles.giftWrapper}>
-            {/* 🚀 UI DÜZELTMESİ: Eğer kutu açıldıysa Yarın Gel yaz, Açılmadıysa kilitli/açık göster */}
             {isBoxOpened ? (
               <View style={styles.lockedGift}>
                 <Ionicons name="checkmark-circle" size={32} color="#10B981" />
@@ -296,13 +290,27 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
     </View>
   );
 }
-
-// Stillerin tamamı senin gönderdiğinle aynı, aşağıda aynı şekilde bırakıldı...
 const styles = StyleSheet.create({
-  historySection: { paddingHorizontal: 10, marginTop: 30 },
-  missionHeaderRow: { marginBottom: 15 },
-  titleWithBadge: { flexDirection: 'row', alignItems: 'center' },
-  missionIconBadge: { width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  // --- ANA BÖLÜM VE BAŞLIK ---
+  historySection: { 
+    paddingHorizontal: 10, 
+    marginTop: 30 
+  },
+  missionHeaderRow: { 
+    marginBottom: 15 
+  },
+  titleWithBadge: { 
+    flexDirection: 'row', 
+    alignItems: 'center' 
+  },
+  missionIconBadge: { 
+    width: 38, 
+    height: 38, 
+    borderRadius: 10, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginRight: 12 
+  },
   missionMainTitle: { 
     fontFamily: 'Nunito_900Black', 
     fontSize: 19, 
@@ -314,26 +322,72 @@ const styles = StyleSheet.create({
     fontSize: 13, 
     color: '#666' 
   },
-  questCard: { width: '100%', backgroundColor: 'white', borderRadius: 25, padding: 20, elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
-  questMainRow: { flexDirection: 'row', alignItems: 'center' },
-  questIconBox: { width: 50, height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center' },
-  questContent: { flex: 1, paddingHorizontal: 15 },
+
+  // --- GÖREV KARTI (QUEST CARD) ---
+  questCard: { 
+    width: '100%', 
+    backgroundColor: 'white', 
+    borderRadius: 25, 
+    padding: 20, 
+    elevation: 4, 
+    shadowColor: '#000', 
+    shadowOpacity: 0.1, 
+    shadowRadius: 10 
+  },
+  questMainRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center' 
+  },
+  questIconBox: { 
+    width: 50, 
+    height: 50, 
+    borderRadius: 15, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  questContent: { 
+    flex: 1, 
+    paddingHorizontal: 15 
+  },
   questText: { 
     fontFamily: 'Nunito_800ExtraBold', 
     fontSize: 15, 
     color: '#333', 
     marginBottom: 8 
   },
-  progressRow: { flexDirection: 'row', alignItems: 'center' },
-  progressTrack: { flex: 1, height: 8, backgroundColor: '#F0F0F0', borderRadius: 4, overflow: 'hidden', marginRight: 10 },
-  progressFill: { height: '100%', borderRadius: 4 },
+
+  // --- İLERLEME ÇUBUĞU (PROGRESS BAR) ---
+  progressRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center' 
+  },
+  progressTrack: { 
+    flex: 1, 
+    height: 8, 
+    backgroundColor: '#F0F0F0', 
+    borderRadius: 4, 
+    overflow: 'hidden', 
+    marginRight: 10 
+  },
+  progressFill: { 
+    height: '100%', 
+    borderRadius: 4 
+  },
   currentProgressText: { 
     fontFamily: 'Nunito_900Black', 
     fontSize: 13, 
     color: '#FF00D6' 
   },
-  giftWrapper: { alignItems: 'center', minWidth: 80 },
-  lockedGift: { alignItems: 'center', opacity: 0.6 },
+
+  // --- HEDİYE DURUMLARI (GIFT STATES) ---
+  giftWrapper: { 
+    alignItems: 'center', 
+    minWidth: 80 
+  },
+  lockedGift: { 
+    alignItems: 'center', 
+    opacity: 0.6 
+  },
   lockedText: { 
     fontFamily: 'Nunito_800ExtraBold', 
     fontSize: 10, 
@@ -341,7 +395,17 @@ const styles = StyleSheet.create({
     marginTop: 5, 
     letterSpacing: 1.5 
   },
-  activeGift: { width: 50, height: 50, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowColor: '#FF00D6', shadowOpacity: 0.4, shadowRadius: 10, elevation: 8 },
+  activeGift: { 
+    width: 50, 
+    height: 50, 
+    borderRadius: 20, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    shadowColor: '#FF00D6', 
+    shadowOpacity: 0.4, 
+    shadowRadius: 10, 
+    elevation: 8 
+  },
   openMeText: { 
     fontFamily: 'Nunito_900Black', 
     fontSize: 11, 
@@ -349,6 +413,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textTransform: 'uppercase' 
   },
+
+  // --- ÖDÜL MODAL (LOOT MODAL) ---
   modalOverlay: { 
     flex: 1, 
     backgroundColor: 'rgba(5, 0, 10, 0.97)', 
@@ -368,7 +434,11 @@ const styles = StyleSheet.create({
     height: 140, 
     opacity: 0.4 
   },
-  lootMainStage: { alignItems: 'center' },
+
+  // --- ÖDÜL GÖRSELİ VE ÇERÇEVE ---
+  lootMainStage: { 
+    alignItems: 'center' 
+  },
   rewardAuraCore: { 
     position: 'absolute', 
     width: 280, 
@@ -376,9 +446,12 @@ const styles = StyleSheet.create({
     top: -30,
     opacity: 0.35
   },
-  auraCircle: { flex: 1, borderRadius: 140 },
+  auraCircle: { 
+    flex: 1, 
+    borderRadius: 140 
+  },
   premiumObjectFrame: { 
-   width: width * 0.4,
+    width: width * 0.4,
     aspectRatio: 0.75,
     height: 230, 
     borderRadius: 40, 
@@ -396,11 +469,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden'
   },
-  rewardImage: { width: '95%', height: '95%', resizeMode: 'contain' },
+  rewardImage: { 
+    width: '95%', 
+    height: '95%', 
+    resizeMode: 'contain' 
+  },
   shineOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10
   },
+
+  // --- ÖDÜL BİLGİ KARTI VE METİNLER ---
   glassInfoCard: { 
     marginTop: 35,
     padding: 20, 
@@ -411,7 +490,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)'
   },
- rarityTextPremium: { 
+  rarityTextPremium: { 
     fontFamily: 'Nunito_900Black', 
     fontSize: 12, 
     letterSpacing: 5, 
@@ -439,6 +518,8 @@ const styles = StyleSheet.create({
     textAlign: 'center', 
     lineHeight: 24
   },
+
+  // --- BUTON STİLLERİ ---
   claimButton: { 
     marginTop: 45, 
     width: 210, 
@@ -465,11 +546,11 @@ const styles = StyleSheet.create({
     height: '40%',
     backgroundColor: 'rgba(255, 255, 255, 0.25)',
   },
- claimText: { 
+  claimText: { 
     fontFamily: 'Nunito_900Black', 
     fontSize: 17, 
     color: '#fff', 
     letterSpacing: 1.5,
-    textTransform: 'uppercase' ,
+    textTransform: 'uppercase'
   },
 });

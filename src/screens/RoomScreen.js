@@ -109,7 +109,6 @@ export default function RoomScreen({ navigation, route }) {
   const [officialMemes, setOfficialMemes] = useState([]);
   const [situationPrompts, setSituationPrompts] = useState([]);
 
-  // 🚀 SES YÜKLEMELERİ
   const tickPlayer = useAudioPlayer(require('../../assets/sounds/tick.mp3'));
   const playTickPlayer = useAudioPlayer(require('../../assets/sounds/play_tick.mp3'));
   const swooshPlayer = useAudioPlayer(require('../../assets/sounds/swoosh.mp3'));
@@ -131,7 +130,6 @@ export default function RoomScreen({ navigation, route }) {
 
   const playSound = (soundType) => {
     if (isMuted) return;
-
     try {
       switch (soundType) {
         case 'swoosh': swooshPlayer.seekTo(0); swooshPlayer.play(); break;
@@ -156,7 +154,6 @@ export default function RoomScreen({ navigation, route }) {
     }
   };
 
-  // 🚀 DÜZELTME 2: İlk elde "Durum Bekleniyor" takılmasını kesin çözen özel takipçi
   useEffect(() => {
     if (amIHost && currentPrompt === "Durum bekleniyor..." && situationPrompts.length > 0 && roomId) {
       let randomPrompt;
@@ -179,7 +176,6 @@ export default function RoomScreen({ navigation, route }) {
         } else {
            setOfficialMemes(memesData || []);
         }
-
         const { data: situationsData, error: situationsError } = await supabase.from('situations').select('*');
         if (situationsError) {
            console.error("Situations Hatası:", JSON.stringify(situationsError, null, 2)); 
@@ -211,7 +207,6 @@ export default function RoomScreen({ navigation, route }) {
         onDisconnect(myPlayerRef).remove();
       }
     });
-
     return () => unsubscribeConnection();
   }, [roomId, cleanMyName, myAvatarSeed, me?.id]);
 
@@ -230,7 +225,6 @@ export default function RoomScreen({ navigation, route }) {
         const data = snapshot.val();
         if (data) {
           const rawPlayers = Object.keys(data).map(key => ({ id: key, ...data[key] }));
-
           const uniquePlayers = [];
           const seenNames = new Set();
           rawPlayers.forEach(p => {
@@ -240,10 +234,8 @@ export default function RoomScreen({ navigation, route }) {
               uniquePlayers.push(p);
             }
           });
-
           setPlayers(uniquePlayers);
           setIsRoomReady(true);
-          
           setScores(prevScores => {
             const newScores = { ...prevScores };
             uniquePlayers.forEach(p => { if (newScores[p.name] === undefined) newScores[p.name] = 0; });
@@ -282,13 +274,9 @@ export default function RoomScreen({ navigation, route }) {
                 usedPromptsRef.current.push(roomData.currentPrompt);
               }
             }
-            // 🚀 DÜZELTME 3: Hatalı "else if (amIHost)" bloğu tamamen silindi. 
-            // O işlemi artık yukarıya eklediğimiz 2. Adımdaki yeni useEffect güvenle yapıyor!
         }
       });
-      
       Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
-
       return () => { unsubscribePlayers(); unsubscribeRoom(); ScreenOrientation.unlockAsync(); };
     }
   }, [roomId, officialMemes, situationPrompts]); 
@@ -313,28 +301,19 @@ export default function RoomScreen({ navigation, route }) {
 
     const activePhases = ['READING', 'PLAYING', 'VOTING'];
 
-    // 🚀 DÜZELTME: Veriler tamamen inmeden SÜREYİ ASLA BAŞLATMA!
     const isFullyLoaded = isRoomReady && officialMemes.length > 0 && situationPrompts.length > 0;
 
-    // Eğer henüz yükleme ekranındaysak, sayacı burada durdur.
     if (!isFullyLoaded) return; 
 
     if (timeLeft > 0 && activePhases.includes(phase) && !isTimeFrozen) { 
-      
-      // 🚀 ZAMANLAYICI SESİ (Düzeltildi)
       if (phase === 'PLAYING' && timeLeft === 3 && !isMuted) {
         tickPlayer.seekTo(0);
         tickPlayer.play();
       }
-
       timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
-      
    } else if (timeLeft === 0 && activePhases.includes(phase)) {
       timeLeftAnim.setValue(1);
-      
-      // 🚀 ZAMANLAYICI SESİNİ DURDUR
       tickPlayer.pause();
-      
       if (phase === 'READING') {
         setPhase('PLAYING');
         setTimeLeft(7); 
@@ -344,7 +323,7 @@ export default function RoomScreen({ navigation, route }) {
           const handNow = [...stateRefs.current.myHand]; 
           const randomIndex = Math.floor(Math.random() * handNow.length);
           const randomCard = handNow[randomIndex]; 
-          
+
           handlePlayCard(randomCard.id); 
         }
         setPhase('WAITING_CARDS'); 
@@ -361,7 +340,7 @@ export default function RoomScreen({ navigation, route }) {
       }
     }
     return () => clearTimeout(timer);
-  }, [timeLeft, phase, isTimeFrozen, isRoomReady, officialMemes.length, situationPrompts.length]); // 🚀 
+  }, [timeLeft, phase, isTimeFrozen, isRoomReady, officialMemes.length, situationPrompts.length]);
 
   useEffect(() => {
     if (phase === 'WAITING_CARDS' && officialMemes.length > 0) { 
@@ -422,11 +401,9 @@ export default function RoomScreen({ navigation, route }) {
             });
           }
         }, 2500);
-
         const forceTimeout = setTimeout(() => {
           calculateResults();
         }, 4000);
-
         return () => {
           clearTimeout(hostTimeout);
           clearTimeout(forceTimeout);
@@ -513,7 +490,7 @@ export default function RoomScreen({ navigation, route }) {
         triggerHighlight();
         break;
 
-      case 'joker_freeze':
+       case 'joker_freeze':
         playSound('iced_magic');
         update(ref(database, `rooms/${roomId}`), { isGlobalFrozen: true });
         setTimeout(() => {
@@ -542,8 +519,6 @@ export default function RoomScreen({ navigation, route }) {
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       playSound('swoosh');
-
-      // 🚀 OYUNCU KARTI ATINCA SÜRE SESİ SUSSUN
       tickPlayer.pause();
 
       const cardToPlay = stateRefs.current.myHand.find(c => c.id === targetCardId);
@@ -660,7 +635,6 @@ export default function RoomScreen({ navigation, route }) {
       }
 
       setRoundEnded(true);
-
       Animated.spring(announcementAnim, { toValue: 1, useNativeDriver: true }).start();
 
       const isGameOver = stateRefs.current.myHand.length === 0;
@@ -796,13 +770,12 @@ export default function RoomScreen({ navigation, route }) {
   const opponentPositions = [styles.topPlayer, styles.leftPlayer, styles.rightPlayer];
   const opponentColors = ["#E5E7EB", "#E5E7EB", "#E5E7EB"];
 
- // 🚀 YENİ: Temaya (Beyaz, Pembe, Turuncu) Uygun "Senior" Yükleme Ekranı
   if (!isRoomReady || officialMemes.length === 0 || situationPrompts.length === 0) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA' }]}>
         <StatusBar hidden />
         
-        {/* 🎨 Arka Plan Süslemeleri (Hafif ve Premium) */}
+        {/*  Arka Plan Süslemeleri (Hafif ve Premium) */}
         <View style={{ position: 'absolute', top: '15%', right: '10%', opacity: 0.05 }}>
            <Ionicons name="sparkles" size={100} color="#FF00D6" />
         </View>
@@ -810,7 +783,7 @@ export default function RoomScreen({ navigation, route }) {
            <Ionicons name="layers" size={120} color="#FF8A00" />
         </View>
 
-        {/* 🃏 Merkez Animasyonlu Şık Kutu (Hafif Eğik 3D Hissi) */}
+        {/*  Merkez Animasyonlu Şık Kutu (Hafif Eğik 3D Hissi) */}
         <View style={{
           width: 110, height: 110, borderRadius: 32, backgroundColor: '#FFF',
           justifyContent: 'center', alignItems: 'center', marginBottom: 35,
@@ -920,10 +893,10 @@ export default function RoomScreen({ navigation, route }) {
           </LinearGradient>
         </View>
 
-       <View style={[
-    styles.hudWrapper, 
-    { paddingRight: Math.max(insets.right, 10) } 
-  ]}>
+            <View style={[
+          styles.hudWrapper, 
+          { paddingRight: Math.max(insets.right, 10) } 
+        ]}>
           <View style={styles.hudContainer}>
             
             <TouchableOpacity 
@@ -1030,56 +1003,41 @@ export default function RoomScreen({ navigation, route }) {
             <View style={styles.centerArea}>
               {phase === 'READING' && (
               <Animated.View style={[styles.situationCardWrapper, { transform: [{ scale: popAnim }, { scale: cardScale }, { rotateY: cardRotate }] }]}>
-  <View style={styles.premiumSituationCard}>
-    {/* 🚀 GRİLİK (glossyHighlight) KALDIRILDI: Daha temiz bir görünüm için o satırı sildik. */}
-    
-    <View style={styles.cardInnerContent}>
-      <View style={styles.premiumHeaderCentered}>
-        <View style={styles.moodBadge}>
-          <Text style={[styles.moodLetter, { color: '#FF69EB' }]}>M</Text>
-          <Text style={[styles.moodLetter, { color: '#FF86C8' }]}>O</Text>
-          <Text style={[styles.moodLetter, { color: '#FF8001' }]}>O</Text>
-          <Text style={[styles.moodLetter, { color: '#F53BDC' }]}>D</Text>
-        </View>
-      </View>
+              <View style={styles.premiumSituationCard}>
+                
+                <View style={styles.cardInnerContent}>
+                  <View style={styles.premiumHeaderCentered}>
+                    <View style={styles.moodBadge}>
+                      <Text style={[styles.moodLetter, { color: '#FF69EB' }]}>M</Text>
+                      <Text style={[styles.moodLetter, { color: '#FF86C8' }]}>O</Text>
+                      <Text style={[styles.moodLetter, { color: '#FF8001' }]}>O</Text>
+                      <Text style={[styles.moodLetter, { color: '#F53BDC' }]}>D</Text>
+                    </View>
+                  </View>
 
-      <View style={styles.premiumDivider} />
+                  <View style={styles.premiumDivider} />
 
-      {/* KAYDIRILABİLİR METİN ALANI */}
-      <View style={{ flex: 1, overflow: 'hidden' }}>
-        <ScrollView 
-          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingBottom: 20 }}
-          showsVerticalScrollIndicator={true}
-          persistentScrollbar={true}
-          indicatorStyle="black" // Kart rengine göre daha belirgin olması için siyah yaptık
-        >
-          <Text 
-            style={styles.premiumText}
-            adjustsFontSizeToFit={true}
-            minimumFontScale={0.8}
-          >
-            {currentPrompt}
-          </Text>
-        </ScrollView>
-
-        {/* ALTTAKİ HAFİF GEÇİŞ: Sadece aşağıda yazı olduğunu belli etmek için çok ince bir dokunuş */}
-        <LinearGradient 
-          colors={['transparent', 'git statusrgba(255, 209, 163, 0.05)', 'rgba(255, 209, 163, 0.8)']} 
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 25,
-          }} 
-          pointerEvents="none" 
-        />
-      </View>
-    </View>
-  </View>
-</Animated.View>
-                          )}
-
+                    {/*TEMİZ METİN ALANI: Buğu ve parlama tamamen kaldırıldı */}
+                    <View style={{ flex: 1, overflow: 'hidden' }}>
+                      <ScrollView 
+                        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingVertical: 10 }}
+                        showsVerticalScrollIndicator={true}
+                        persistentScrollbar={true} // Android'de kaydırma çubuğu net görünür
+                        indicatorStyle="white" 
+                      >
+                        <Text 
+                          style={styles.premiumText}
+                          adjustsFontSizeToFit={true}
+                          minimumFontScale={0.8}
+                        >
+                          {currentPrompt}
+                        </Text>
+                            </ScrollView>
+                          </View>
+                        </View>
+                      </View>
+                    </Animated.View>
+               )}
               {(phase === 'PLAYING' || phase === 'WAITING_CARDS') && (
                 <View style={styles.proTimerContainer}>
                   <View style={[styles.staticRing, isTimeFrozen && styles.staticRingFrozen]} />
@@ -1200,7 +1158,7 @@ export default function RoomScreen({ navigation, route }) {
                           priority="high" 
                           cachePolicy="memory-disk" 
                       />
-      </Animated.View>
+                  </Animated.View>
                     {isSelected && <View style={styles.selectedBorder} />}
                     {isSelected && (
                       <TouchableOpacity style={styles.playButton} onPress={() => handlePlayCard()} activeOpacity={0.8}>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, StyleSheet, Image, KeyboardAvoidingView, Platform, 
   StatusBar, Dimensions, ActivityIndicator, ScrollView, Keyboard,
-  Modal // 🚀 Custom Alert için eklendi
+  Modal 
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,8 +36,6 @@ export default function AuthScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [keyboardStatus, setKeyboardStatus] = useState(false);
-
-  // 🚀 CUSTOM ALERT STATE'LERİ
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState({ title: '', message: '' });
 
@@ -50,7 +48,6 @@ export default function AuthScreen() {
     };
   }, []);
 
-  // 🚀 CUSTOM ALERT FONKSİYONU
   const showAlert = (title, message) => {
     setAlertConfig({ title, message });
     setAlertVisible(true);
@@ -106,7 +103,7 @@ export default function AuthScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
       
-      {/* 🚀 CUSTOM ALERT MODAL */}
+      {/*CUSTOM ALERT MODAL */}
       <Modal visible={alertVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.alertContainer}>
@@ -177,7 +174,6 @@ export default function AuthScreen() {
               <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={styles.footerLink}>
                 <Text style={styles.footerText}>{isLogin ? 'Hesabın yok mu? ' : 'Zaten üye misin? '}<Text style={styles.footerLinkBold}>{isLogin ? 'Kayıt Ol' : 'Giriş Yap'}</Text></Text>
               </TouchableOpacity>
-
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -187,33 +183,182 @@ export default function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.white },
-  circleBlur2: { position: 'absolute', bottom: -70, left: -60, width: 240, height: 240, borderRadius: 120, backgroundColor: theme.orange, opacity: 0.15 },
-  content: { flex: 1, paddingHorizontal: 28, paddingBottom: 30, alignItems: 'center', justifyContent: 'center' },
-  logoContainer: { width: width * 0.8, height: width * 0.55, marginBottom: 20 },
-  logoImage: { width: '100%', height: '100%' },
-  headerTextGroup: { width: '100%', marginBottom: 30, alignItems: 'center' },
-  mainTitle: { fontSize: 32, fontWeight: '900', color:'#424242', marginBottom: 8 },
-  subTitle: { fontSize: 15, color: theme.subText, textAlign: 'center', fontWeight: '500' },
-  formContainer: { width: '100%', marginBottom: 25 },
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.inputBg, height: 62, borderRadius: 20, paddingHorizontal: 20, marginBottom: 16, borderWidth: 1.5, borderColor: theme.border },
-  input: { flex: 1, fontSize: 16, color: theme.deepText, fontWeight: '600', marginLeft: 12 },
-  forgotPass: { alignSelf: 'flex-end', marginTop: -4, paddingVertical: 5 },
-  forgotPassText: { color: theme.pink, fontWeight: '700', fontSize: 14 },
-  buttonShadow: { width: '100%', shadowColor: theme.pink, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 10 },
-  mainButton: { height: 64, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  buttonText: { color: 'white', fontSize: 18, fontWeight: '800' },
-  footerLink: { marginTop: 25, padding: 10 },
-  footerText: { fontSize: 15, color: theme.subText, fontWeight: '500' },
-  footerLinkBold: { color: theme.pink, fontWeight: '800' },
+  // --- ANA KONTEYNER VE ARKA PLAN ---
+  container: { 
+    flex: 1, 
+    backgroundColor: theme.white 
+  },
+  circleBlur2: { 
+    position: 'absolute', 
+    bottom: -70, 
+    left: -60, 
+    width: 240, 
+    height: 240, 
+    borderRadius: 120, 
+    backgroundColor: theme.orange, 
+    opacity: 0.15 
+  },
 
-  // 🚀 ALERT STYLES
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  alertContainer: { width: width * 0.85, backgroundColor: 'white', borderRadius: 30, padding: 25, alignItems: 'center', elevation: 20 },
-  alertHeaderIcon: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 20, marginTop: -60, borderWidth: 5, borderColor: 'white' },
-  alertTitle: { fontSize: 20, fontWeight: '900', color: theme.deepText, marginBottom: 10 },
-  alertMessage: { fontSize: 14, color: theme.subText, textAlign: 'center', lineHeight: 20, marginBottom: 25 },
-  alertButton: { width: '100%', height: 50, borderRadius: 15, overflow: 'hidden' },
-  alertButtonGradient: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  alertButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' }
+  // --- İÇERİK YAPISI ---
+  content: { 
+    flex: 1, 
+    paddingHorizontal: 28, 
+    paddingBottom: 30, 
+    alignItems: 'center', 
+    justifyContent: 'center' 
+  },
+  logoContainer: { 
+    width: width * 0.8, 
+    height: width * 0.55, 
+    marginBottom: 20 
+  },
+  logoImage: { 
+    width: '100%', 
+    height: '100%' 
+  },
+
+  // --- METİN GRUPLARI ---
+  headerTextGroup: { 
+    width: '100%', 
+    marginBottom: 30, 
+    alignItems: 'center' 
+  },
+  mainTitle: { 
+    fontSize: 32, 
+    fontWeight: '900', 
+    color: '#424242', 
+    marginBottom: 8 
+  },
+  subTitle: { 
+    fontSize: 15, 
+    color: theme.subText, 
+    textAlign: 'center', 
+    fontWeight: '500' 
+  },
+
+  // --- FORM VE GİRDİ ALANLARI ---
+  formContainer: { 
+    width: '100%', 
+    marginBottom: 25 
+  },
+  inputWrapper: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: theme.inputBg, 
+    height: 62, 
+    borderRadius: 20, 
+    paddingHorizontal: 20, 
+    marginBottom: 16, 
+    borderWidth: 1.5, 
+    borderColor: theme.border 
+  },
+  input: { 
+    flex: 1, 
+    fontSize: 16, 
+    color: theme.deepText, 
+    fontWeight: '600', 
+    marginLeft: 12 
+  },
+
+  // --- ŞİFRE UNUTTUM VE BUTONLAR ---
+  forgotPass: { 
+    alignSelf: 'flex-end', 
+    marginTop: -4, 
+    paddingVertical: 5 
+  },
+  forgotPassText: { 
+    color: theme.pink, 
+    fontWeight: '700', 
+    fontSize: 14 
+  },
+  buttonShadow: { 
+    width: '100%', 
+    shadowColor: theme.pink, 
+    shadowOpacity: 0.4, 
+    shadowRadius: 12, 
+    shadowOffset: { width: 0, height: 6 }, 
+    elevation: 10 
+  },
+  mainButton: { 
+    height: 64, 
+    borderRadius: 22, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  buttonText: { 
+    color: 'white', 
+    fontSize: 18, 
+    fontWeight: '800' 
+  },
+
+  // --- FOOTER (ALT KISIM) ---
+  footerLink: { 
+    marginTop: 25, 
+    padding: 10 
+  },
+  footerText: { 
+    fontSize: 15, 
+    color: theme.subText, 
+    fontWeight: '500' 
+  },
+  footerLinkBold: { 
+    color: theme.pink, 
+    fontWeight: '800' 
+  },
+
+  // 🚀 ALERT (UYARI) MODAL STİLLERİ
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.5)', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  alertContainer: { 
+    width: width * 0.85, 
+    backgroundColor: 'white', 
+    borderRadius: 30, 
+    padding: 25, 
+    alignItems: 'center', 
+    elevation: 20 
+  },
+  alertHeaderIcon: { 
+    width: 70, 
+    height: 70, 
+    borderRadius: 35, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginBottom: 20, 
+    marginTop: -60, 
+    borderWidth: 5, 
+    borderColor: 'white' 
+  },
+  alertTitle: { 
+    fontSize: 20, 
+    fontWeight: '900', 
+    color: theme.deepText, 
+    marginBottom: 10 
+  },
+  alertMessage: { 
+    fontSize: 14, 
+    color: theme.subText, 
+    textAlign: 'center', 
+    lineHeight: 20, 
+    marginBottom: 25 
+  },
+  alertButton: { 
+    width: '100%', 
+    height: 50, 
+    borderRadius: 15, 
+    overflow: 'hidden' 
+  },
+  alertButtonGradient: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  alertButtonText: { 
+    color: 'white', 
+    fontSize: 16, 
+    fontWeight: 'bold' 
+  }
 });

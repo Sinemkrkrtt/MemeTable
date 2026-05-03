@@ -40,19 +40,15 @@ const Snowflake = ({ delay, left, size }) => {
 export default function LobbyRoom({ route, navigation }) {
   const { width, height } = useWindowDimensions();
   const { roomId, myAvatarSeed, myName } = route.params || { roomId: '...', myAvatarSeed: 'Oliver', myName: 'Oyuncu' };
-
   const [players, setPlayers] = useState([]);
   const popAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current; // EKLENDİ: Alt bar animasyonu için eksik referans
-  
-  // 🚀 DÜZELTME 2: Çift geçiş (double navigate) kilit sistemi
+  const pulseAnim = useRef(new Animated.Value(1)).current;
   const hasNavigated = useRef(false);
 
   const logoSwapHand = require('../../assets/joker1.png');
   const logoSwapCard = require('../../assets/joker2.png');
   const logoTimeFreeze = require('../../assets/joker3.png');
 
-  // EKLENDİ: Alt barın nefes alma animasyonu
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -79,13 +75,11 @@ export default function LobbyRoom({ route, navigation }) {
           }));
           setPlayers(playersList);
         }
-
-        // 🚀 DÜZELTME 3: React Navigation animasyonlarına zaman tanıyoruz (1.2 saniye bekleme)
         if (data.status === 'playing' && !hasNavigated.current) {
           hasNavigated.current = true;
           setTimeout(() => {
              navigation.replace('RoomScreen', { roomId, myAvatarSeed, myName });
-          }, 1200); // Masa yüklenir yüklenmez oyuna atmasın, önce bir masayı görsünler
+          }, 1200);
         }
       }
     });

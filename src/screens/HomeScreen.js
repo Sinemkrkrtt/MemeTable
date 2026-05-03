@@ -11,10 +11,8 @@ import { styles, palet } from './HomeScreenStyles';
 import DailyMission from './DailyMission';
 import RandomMatchScreen from './RandomMatchScreen';
 import { Image } from 'expo-image';
-// 1. YENİ EKLENEN IMPORTLAR: Ses işlemleri için yeni useAudioPlayer ve setAudioModeAsync kullanıyoruz.
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
-
 import { useFonts } from 'expo-font';
 import { 
   Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold, 
@@ -27,10 +25,8 @@ export default function HomeScreen({ navigation }) {
   const [nickname, setNickname] = useState("");
   const [wonHearts, setWonHearts] = useState(0);
   const [isBoxOpened, setIsBoxOpened] = useState(false);
-  
   const [coins, setCoins] = useState(0);
   const [diamonds, setDiamonds] = useState(0);
-  
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scalePress = useRef(new Animated.Value(1)).current;
 
@@ -38,11 +34,9 @@ export default function HomeScreen({ navigation }) {
     Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold, Nunito_900Black, Nunito_800ExtraBold_Italic,
   });
 
-  // 2. YENİ SES HOOK'LARI: Ses sayfa açıldığında hafızaya yüklenir.
   const moneySound = useAudioPlayer(require('../../assets/sounds/cash.mp3'));
   const tapSound = useAudioPlayer(require('../../assets/sounds/ui_tap.mp3'));
 
-  // 3. YENİ VE HIZLI playHomeSound FONKSİYONU
   const playHomeSound = (soundType) => {
     try {
       if (soundType === 'money') {
@@ -58,7 +52,6 @@ export default function HomeScreen({ navigation }) {
   };
 
   useEffect(() => {
-    // 4. SES AYARLARI GÜNCELLENDİ (Eski Audio kütüphanesi referansı kaldırıldı)
     const configureAudio = async () => {
         try {
             await setAudioModeAsync({ playsInSilentMode: true });
@@ -94,7 +87,6 @@ export default function HomeScreen({ navigation }) {
   }, []);
 
   const handleNavigateWithAvatar = (targetScreen, additionalParams = {}) => {
-    // Buton sesi ve hafif titreşim
     playHomeSound('tap');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
@@ -115,7 +107,6 @@ export default function HomeScreen({ navigation }) {
     Animated.spring(scalePress, { toValue: 1, friction: 3, tension: 40, useNativeDriver: true }).start();
   };
 
-
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -125,7 +116,7 @@ export default function HomeScreen({ navigation }) {
             
             <TouchableOpacity 
               onPress={() => {
-                playHomeSound('money'); // 🚀 Para sesi
+                playHomeSound('money');
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                 navigation.navigate('MarketScreen');
               }} 
@@ -157,7 +148,6 @@ export default function HomeScreen({ navigation }) {
               signOut(auth);
             }}
           >
-            {/* 🔥 DÜZELTME: İkonu bir View içine alıp stili o View'a veriyoruz! */}
             <View style={styles.logoutIcon}>
               <Ionicons name="power" size={20} color={palet.peach} />
             </View>
@@ -170,9 +160,9 @@ export default function HomeScreen({ navigation }) {
           source={require('../../assets/homeLogo.png')} 
           style={styles.homeLogoLarge} 
           contentFit="contain"
-          priority="high" // Açılışta en önce bu yüklensin
-          transition={500} // Uygulama açılırken logonun yumuşakça belirmesini sağlar
-          cachePolicy="memory" // RAM'de hazır tutar
+          priority="high" 
+          transition={500} 
+          cachePolicy="memory" 
       />
           </Animated.View>
 
@@ -180,14 +170,22 @@ export default function HomeScreen({ navigation }) {
             <Animated.View style={{ flex: 1.2, transform: [{ scale: scalePress }] }}>
                   <TouchableOpacity 
                     activeOpacity={0.9} 
-                    onPressIn={onPressIn} // <-- Eklendi
-                    onPressOut={onPressOut} // <-- Eklendi
+                    onPressIn={onPressIn} 
+                    onPressOut={onPressOut} 
                     onPress={() => handleNavigateWithAvatar('RandomMatchScreen', { mode: 'public' })} 
                     style={styles.bigActionCard}
                   >
                 <LinearGradient colors={[palet.vibrant, palet.peach]} style={styles.cardInner}>
-                  <View style={styles.cardHeader}><Ionicons name="flash" size={30} color="white" /><View style={styles.topRightArrow}><Ionicons name="arrow-up" size={22} color="white" /></View></View>
-                  <View><Text style={styles.cardTitleBig}>HIZLI{"\n"}OYNA</Text><Text style={styles.cardSubTitle}>ANINDA EŞLEŞ</Text></View>
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="flash" size={30} color="white" />
+                    <View style={styles.topRightArrow}>
+                      <Ionicons name="arrow-up" size={22} color="white" />
+                      </View>
+                      </View>
+                  <View>
+                    <Text style={styles.cardTitleBig}>HIZLI{"\n"}OYNA</Text>
+                    <Text style={styles.cardSubTitle}>ANINDA EŞLEŞ</Text>
+                    </View>
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
@@ -198,7 +196,11 @@ export default function HomeScreen({ navigation }) {
                 onPress={() => handleNavigateWithAvatar('LobbyScreen', { isHost: true })}
               >
                 <LinearGradient colors={[palet.peach, palet.sand]} style={styles.cardInner}>
-                  <View style={styles.cardHeader}><Ionicons name="add" size={26} color="white" /><View style={styles.topRightArrow}><Ionicons name="arrow-up" size={22} color="white" /></View></View>
+                  <View style={styles.cardHeader}><Ionicons name="add" size={26} color="white" />
+                  <View style={styles.topRightArrow}>
+                    <Ionicons name="arrow-up" size={22} color="white" />
+                    </View>
+                    </View>
                   <Text style={styles.cardTitleSmall}>ODA KUR</Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -208,18 +210,21 @@ export default function HomeScreen({ navigation }) {
                 onPress={() => handleNavigateWithAvatar('JoinRoom')}
               >
                 <LinearGradient colors={[palet.sand, palet.yellow]} style={styles.cardInner}>
-                  <View style={styles.cardHeader}><Ionicons name="qr-code" size={26} color="white" /><View style={styles.topRightArrow}><Ionicons name="arrow-up" size={22} color="white" /></View></View>
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="qr-code" size={26} color="white" />
+                    <View style={styles.topRightArrow}>
+                      <Ionicons name="arrow-up" size={22} color="white" />
+                      </View>
+                      </View>
                   <Text style={styles.cardTitleSmall}>KATIL</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
           </View>
-
           <DailyMission 
             wonHearts={wonHearts} 
             isBoxOpened={isBoxOpened} 
           />
-
         </ScrollView>
       </SafeAreaView>
     </View>

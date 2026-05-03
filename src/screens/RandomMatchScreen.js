@@ -11,13 +11,41 @@ import * as Haptics from 'expo-haptics';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { Image } from 'expo-image';
 
-const BOT_NAMES = ["Alex", "Zeynep", "MemeLord", "Cansu", "Shadow", "Burak", "KediKız", "IronMan_99", "DogeFan"];
-const BOT_AVATARS = ["Felix", "Bella", "Max", "Luna", "Charlie", "Lucy", "Cooper", "Daisy", "Rocky"];
+const BOT_NAMES = [
+  // Gerçekçi Türk İsimleri & Nickler
+  "Alex", "Zeynep", "Cansu", "Burak", "Efe_TR", "Kaan", "Aslıhan", "Mertcan", "Ceren", 
+  "Emirhan", "Selin_99", "Berkay", "Elif Su", "Kerem", "Deniz", "Tolga", "Aylin", "Onur",
+  "Yasin", "Zehra", "Eren_K", "Buse", "Arda", "Can", "Umut_06", "Melis", "Pelin",
+  "FB_Taha", "Kadikoylu", "Alex_10", "Fenerli_07", "Cengo", "Ece", "Ruzgar",
+
+  //Gamer & Troll Nickleri
+  "MemeLord", "Shadow", "IronMan_99", "DogeFan", "xX_Slayer_Xx", "NoobMaster", "ProGamer",
+  "KediKız", "ToxicBoy", "Afk_Always", "Ping999", "L33t", "Gigachad", "CringeLord", 
+  "Sneaky", "DarkKnight", "TrollFace", "DankMeme", "PepeTheFrog", "Skibidi", "BigChungus",
+  "Ghost", "Ninja", "Headshot_Kralı", "YalnızKurt", "GeceGölgesi", "CayTiryakisi",
+  "Panda", "RoflCopter", "CasualGamer", "TryHard", "BotDeğilim", "GerçekBiri", "Simülasyon",
+
+  // Global İsimler
+  "John", "Sarah", "Emily", "Mike", "Chris_88", "Sam", "Jessica", "David", "Emma",
+  "Oliver", "Sophia", "Lucas", "Mia", "Arthur", "Chloe", "Noah", "Grace", "Liam"
+];
+
+const BOT_AVATARS = [
+  "Felix", "Bella", "Max", "Luna", "Charlie", "Lucy", "Cooper", "Daisy", "Rocky",
+  "Leo", "Mia", "Nolan", "Oliver", "Penny", "Quinn", "Ruby", "Sam", "Toby", "Uma",
+  "Victor", "Wendy", "Xander", "Yara", "Zane", "Apollo", "Athena", "Bandit", "Bear",
+  "Boomer", "Buster", "Cleo", "Coco", "Duke", "Finn", "Gigi", "Gizmo", "Harley",
+  "Hazel", "Hunter", "Jack", "Jasper", "Kobe", "Loki", "Lucky", "Mac", "Milo", "Moose",
+  "Nala", "Ollie", "Oscar", "Peanut", "Pepper", "Piper", "Riley", "Romeo", "Rosie",
+  "Roxy", "Sadie", "Sammy", "Scout", "Shadow", "Simba", "Sparky", "Stella", "Tank",
+  "Teddy", "Thor", "Tilly", "Tucker", "Winston", "Zeus", "Zoe", "Aria", "Ezra",
+  "Nova", "Maya", "Otis", "Arlo", "Hugo", "Ivy", "Gus", "Zelda", "Blue", "Ziggy",
+  "Marlowe", "Rocco", "Xena", "Kai", "Juno", "Pip", "Lulu", "Rex"
+];
 
 export default function RandomMatchScreen({ navigation, route }) {
   const { width, height } = useWindowDimensions();
   const { myAvatarSeed, myName } = route?.params || { myAvatarSeed: 'Oliver', myName: 'Ben' };
-
   const [players, setPlayers] = useState([]);
   const [isSearching, setIsSearching] = useState(true);
   const [matchFound, setMatchFound] = useState(false);
@@ -33,11 +61,9 @@ export default function RandomMatchScreen({ navigation, route }) {
   const searchTimeoutRef = useRef(null);
   const poolDataRef = useRef(null);
 
-  // 🚀 YENİ: Sesleri sayfa açılırken 1 kere yükleyip hafızada hazır bekletiyoruz
   const matchSound = useAudioPlayer(require('../../assets/sounds/ready.mp3'));
   const clickSound = useAudioPlayer(require('../../assets/sounds/click.mp3'));
 
-  // 🚀 YENİ: Telefon sessizde olsa bile eşleşme ve tık seslerinin çalmasını sağlar
   useEffect(() => {
     const setupAudio = async () => {
       try {
@@ -49,7 +75,6 @@ export default function RandomMatchScreen({ navigation, route }) {
     setupAudio();
   }, []);
 
-  // 🚀 GÜNCELLENMİŞ: Eski yavaş çalışan async yapı yerine şipşak çalan yeni yapı
   const playSound = (type) => {
     try {
       if (type === 'match') {
@@ -64,7 +89,6 @@ export default function RandomMatchScreen({ navigation, route }) {
     }
   };
 
-  // --- BURADAN AŞAĞISI (useEffect'ler, Matchmaking vb.) SENİN KODUNLA AYNI ---
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
     // ...
@@ -91,11 +115,8 @@ export default function RandomMatchScreen({ navigation, route }) {
     }
   }, [isSearching]);
 
-  // 🚀 YENİ: Ortak Eşleştirme ve Bot Ekleme Fonksiyonu
   const handleMatchmaking = (data, isTimeUp) => {
     if (hasMatched.current || !data) return;
-
-    // 1. DURUM: BİR HOST BENİ KENDİ ODASINA ÇEKTİ Mİ? (Başka biri 30 saniyeyi veya 4 kişiyi doldurduysa)
     const myData = data[myPlayerId];
     if (myData && myData.matchedRoom) {
       hasMatched.current = true;
@@ -127,18 +148,14 @@ export default function RandomMatchScreen({ navigation, route }) {
       return;
     }
 
-    // 2. DURUM: HAVUZDAKİ GERÇEK OYUNCULARI AL
     const playersInPool = Object.values(data)
-      .filter(p => !p.matchedRoom) // Zaten odaya alınanları sayma
+      .filter(p => !p.matchedRoom) 
       .sort((a, b) => a.joinedAt - b.joinedAt);
-
-    // Eğer 4 kişi olduysa VEYA 30 saniye dolduysa işlemi başlat
     if (playersInPool.length >= 4 || (isTimeUp && playersInPool.length > 0)) {
       const matchedPlayers = playersInPool.slice(0, 4);
       const isMeMatched = matchedPlayers.some(p => p.id === myPlayerId);
 
       if (isMeMatched) {
-        // En uzun süredir bekleyen kişi Host (Kurucu) olur
         const amIHost = matchedPlayers[0].id === myPlayerId;
         
         if (amIHost) {
@@ -149,8 +166,6 @@ export default function RandomMatchScreen({ navigation, route }) {
           playSound('match');
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           Animated.spring(matchPopAnim, { toValue: 1, friction: 5, tension: 40, useNativeDriver: true }).start();
-
-         // Oda ID'sini saniye ve rastgele sayılarla tamamen benzersiz yapıyoruz
           const newRoomId = `PUB_${Date.now().toString().slice(-5)}_${Math.random().toString(36).substring(2, 6)}`;
 
           update(ref(database, `rooms/${newRoomId}`), {
@@ -158,8 +173,6 @@ export default function RandomMatchScreen({ navigation, route }) {
             round: 1,
             createdAt: Date.now()
           });
-
-          // Gerçek oyuncuları al (Kendim hariç diğerlerine matchedRoom ile odayı bildiriyorum)
           matchedPlayers.forEach(p => {
             if (p.id === myPlayerId) {
               remove(ref(database, `matchmaking/waiting_pool/${p.id}`));
@@ -167,8 +180,6 @@ export default function RandomMatchScreen({ navigation, route }) {
               update(ref(database, `matchmaking/waiting_pool/${p.id}`), { matchedRoom: newRoomId });
             }
           });
-
-          // 🚀 Kaç kişi eksikse O KADAR bot ekle! (Örn: 2 gerçek kişi varsa 2 bot)
           const botsNeeded = 4 - matchedPlayers.length;
           const usedIndices = [];
           for (let i = 0; i < botsNeeded; i++) {
@@ -203,7 +214,6 @@ export default function RandomMatchScreen({ navigation, route }) {
             });
           }, 2500);
         }
-        // Eğer Host değilsem hiçbir şey yapmıyorum, Host zaten yukarıda bana "matchedRoom" bildirecek!
       }
     }
   };
@@ -221,7 +231,6 @@ export default function RandomMatchScreen({ navigation, route }) {
 
     onDisconnect(myPlayerRef).remove();
 
-    // Zamanlayıcıyı başlat
     searchTimeoutRef.current = setTimeout(() => {
       if (!hasMatched.current && poolDataRef.current) {
         handleMatchmaking(poolDataRef.current, true);
@@ -230,8 +239,6 @@ export default function RandomMatchScreen({ navigation, route }) {
 
     const unsubscribe = onValue(poolRef, (snapshot) => {
       poolDataRef.current = snapshot.val();
-      
-      // Her veri geldiğinde eşleştirme var mı kontrol et
       handleMatchmaking(poolDataRef.current, false);
 
       if (poolDataRef.current) {
@@ -357,7 +364,6 @@ export default function RandomMatchScreen({ navigation, route }) {
 
             {matchFound && (
               <Animated.View style={[styles.seniorMatchCard, { transform: [{ scale: matchPopAnim }] }]}>
-            {/* Arka planın köşelerini de kartla aynı ovalikte kesiyoruz */}
             <LinearGradient 
               colors={['rgba(255, 255, 255, 0.95)', 'rgba(253, 240, 250, 0.95)']} 
               start={{x: 0, y: 0}} 
@@ -365,7 +371,6 @@ export default function RandomMatchScreen({ navigation, route }) {
               style={[StyleSheet.absoluteFillObject, { borderRadius: 28 }]} 
             />
             
-            {/* Yeni Derinlikli Pembe Çerçeve */}
             <View style={styles.neonBorder} />
 
             {/* İkon Konteyneri */}
@@ -378,12 +383,9 @@ export default function RandomMatchScreen({ navigation, route }) {
               />
               <Ionicons name="game-controller" size={34} color="#FFF" />
             </View>
-
-            {/* Tipografi */}
             <Text style={styles.matchTitle}>EŞLEŞME BULUNDU!</Text>
             <Text style={styles.matchSubtitle}>Rakipler masaya oturuyor...</Text>
           </Animated.View>
-
             )}
           </View>
         </View>
@@ -445,21 +447,18 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    // overflow: 'hidden' KULLANMIYORUZ (Gölgeleri kesmesin diye)
-    
-    // 🚀 Derinliği Artırılmış 3D Pembe Gölge
     shadowColor: '#FF00D6',
-    shadowOffset: { width: 0, height: 12 }, // Gölgeyi aşağıya doğru çektik, kart havaya kalktı
-    shadowOpacity: 0.35, // Daha belirgin bir gölge
-    shadowRadius: 25, // Çok daha geniş alana yayılan parlama
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35, 
+    shadowRadius: 25,
     elevation: 22,
   },
   neonBorder: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 28,
-    borderWidth: 2.5, // Çerçeveyi hafif kalınlaştırdık
-    borderColor: '#FF00D6', // Canlı Neon Pembe
-    opacity: 0.8, // Tam %100 solid yerine hafif şeffaflık vererek "camın kenarı" hissi kattık
+    borderWidth: 2.5,
+    borderColor: '#FF00D6',
+    opacity: 0.8,
   },
   matchIconWrapper: {
     width: 66,
@@ -478,7 +477,7 @@ const styles = StyleSheet.create({
   matchTitle: {
     fontSize: 19,
     fontWeight: '900',
-    color:  '#FF4D00', // Açık fonda okunabilmesi için başlığı neon pembe yaptık
+    color:  '#FF4D00',
     letterSpacing: 1.5,
     marginBottom: 8,
     textAlign: 'center',
@@ -486,7 +485,7 @@ const styles = StyleSheet.create({
   matchSubtitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#64748B', // Göz yormayan, modern ve şık bir gri tonu
+    color: '#64748B', 
     letterSpacing: 0.5,
     textAlign: 'center',
   },

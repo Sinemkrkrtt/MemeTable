@@ -23,8 +23,6 @@ import { db, auth } from '../services/firebase';
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 55) / 2;
 
-// 1. ESKİ async playSound FONKSİYONUNU BURADAN TAMAMEN SİLDİK
-
 const palet = {
   pink: '#FF69EB',
   softPink: '#FF86C8',
@@ -67,11 +65,8 @@ export default function MarketScreen({ navigation }) {
   const [selectedItem, setSelectedItem] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false); 
-
   const [userCoins, setUserCoins] = useState(0);
   const [userDiamonds, setUserDiamonds] = useState(0);
-
-  // 🚀 CUSTOM ALERT STATE'LERİ
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState({ title: '', message: '', buttons: [] });
 
@@ -82,12 +77,10 @@ export default function MarketScreen({ navigation }) {
     Nunito_900Black,
   });
 
-  // 2. YENİ SES HOOK'LARI EKLENDİ
   const clickSound = useAudioPlayer(require('../../assets/sounds/click.mp3'));
   const successSound = useAudioPlayer(require('../../assets/sounds/cha-ching.mp3'));
   const errorSound = useAudioPlayer(require('../../assets/sounds/error.mp3'));
 
-  // 3. YENİ playSound FONKSİYONU EKLENDİ
   const playSound = (type) => {
     try {
       if (type === 'click') {
@@ -106,7 +99,6 @@ export default function MarketScreen({ navigation }) {
   };
 
   useEffect(() => {
-    // 4. SES AYARLARI GÜNCELLENDİ (Eski Audio kütüphanesi referansı kaldırıldı)
     const configureAudio = async () => {
       try {
         await setAudioModeAsync({ playsInSilentMode: true });
@@ -131,9 +123,6 @@ export default function MarketScreen({ navigation }) {
     return () => unsubscribe(); 
   }, []);
 
-  // --- BURADAN AŞAĞISI KESİNLİKLE DEĞİŞTİRİLMEDİ ---
-  
-  // 🚀 CUSTOM ALERT GÖSTERİCİ FONKSİYON
   const showAlert = (title, message, buttons) => {
     setAlertConfig({
       title,
@@ -249,8 +238,8 @@ export default function MarketScreen({ navigation }) {
         source={item.source} 
         style={styles.jokerImage} 
         contentFit="contain" 
-        transition={200} // Küçük bir fade-in ile daha premium bir geçiş sağlar
-        cachePolicy="memory" // Yerel (local) dosyalar için en hızlı erişim politikası
+        transition={200} 
+        cachePolicy="memory"
       />
       </View>
       <View style={styles.jokerInfo}>
@@ -448,9 +437,9 @@ export default function MarketScreen({ navigation }) {
               source={selectedItem.source} 
               style={{ width: 85, height: 85 }} 
               contentFit="contain" 
-              transition={300} // Modal açıldığında görselin küt diye gelmesini engeller
-              priority="high" // Kullanıcı ürüne tıkladığı için en öncelikli bu yüklensin
-              cachePolicy="memory" // Ürün ikonlarını RAM'de hazır tutarak anında gösterir
+              transition={300}
+              priority="high"
+              cachePolicy="memory" 
             />
                   ) : (
                     renderIcon(selectedItem, 75)
@@ -489,78 +478,436 @@ export default function MarketScreen({ navigation }) {
   );
 }
 
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: palet.bg },
+  // --- ANA KONTEYNER ---
+  container: { 
+    flex: 1, 
+    backgroundColor: palet.bg 
+  },
   
-  // HEADER
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 40 : 10, paddingBottom: 15 },
-  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-start' },
-  headerTitle: { fontSize: 22, fontFamily: 'Nunito_900Black', color: palet.textDark, letterSpacing: 0.5 },
-  premiumVault: { flexDirection: 'row', backgroundColor: '#00000057', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
-  vaultItem: { flexDirection: 'row', alignItems: 'center' },
-  vaultText: { fontFamily: 'Nunito_800ExtraBold', fontSize: 13, color: 'white', marginLeft: 6, letterSpacing: 0.5 },
-  vaultSeparator: { width: 1, backgroundColor: 'rgba(255, 255, 255, 0.2)', marginHorizontal: 12 },
+  // --- HEADER (ÜST KISIM) ---
+  header: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    paddingHorizontal: 20, 
+    paddingTop: Platform.OS === 'android' ? 40 : 10, 
+    paddingBottom: 15 
+  },
+  backBtn: { 
+    width: 40, 
+    height: 40, 
+    justifyContent: 'center', 
+    alignItems: 'flex-start' 
+  },
+  headerTitle: { 
+    fontSize: 22, 
+    fontFamily: 'Nunito_900Black', 
+    color: palet.textDark, 
+    letterSpacing: 0.5 
+  },
+  premiumVault: { 
+    flexDirection: 'row', 
+    backgroundColor: '#00000057', 
+    paddingHorizontal: 14, 
+    paddingVertical: 10, 
+    borderRadius: 20, 
+    shadowColor: '#000', 
+    shadowOpacity: 0.2, 
+    shadowRadius: 10, 
+    shadowOffset: { width: 0, height: 4 }, 
+    elevation: 5 
+  },
+  vaultItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center' 
+  },
+  vaultText: { 
+    fontFamily: 'Nunito_800ExtraBold', 
+    fontSize: 13, 
+    color: 'white', 
+    marginLeft: 6, 
+    letterSpacing: 0.5 
+  },
+  vaultSeparator: { 
+    width: 1, 
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', 
+    marginHorizontal: 12 
+  },
   
-  // SECTIONS
-  sectionHeader: { marginHorizontal: 20, marginTop: 10, marginBottom: 16 },
-  sectionTitle: { fontFamily: 'Nunito_900Black', fontSize: 19, color: palet.textDark, letterSpacing: -0.3 },
-  sectionSub: { fontFamily: 'Nunito_600SemiBold', fontSize: 13, color: '#64748B', marginTop: 4, letterSpacing: 0.2 },
+  // --- SECTIONS (BÖLÜM BAŞLIKLARI) ---
+  sectionHeader: { 
+    marginHorizontal: 20, 
+    marginTop: 10, 
+    marginBottom: 16 
+  },
+  sectionTitle: { 
+    fontFamily: 'Nunito_900Black', 
+    fontSize: 19, 
+    color: palet.textDark, 
+    letterSpacing: -0.3 
+  },
+  sectionSub: { 
+    fontFamily: 'Nunito_600SemiBold', 
+    fontSize: 13, 
+    color: '#64748B', 
+    marginTop: 4, 
+    letterSpacing: 0.2 
+  },
   
-  // AD BANNER
-  adBannerCard: { marginHorizontal: 20, marginBottom: 24, borderRadius: 24, shadowColor: palet.pink, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
-  adBannerGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderRadius: 24 },
-  adBannerInfo: { flexDirection: 'row', alignItems: 'center' },
-  adIconContainer: { backgroundColor: 'white', width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
-  adBannerTitle: { fontFamily: 'Nunito_900Black', fontSize: 18, color: 'white', letterSpacing: 0.5 },
-  adBannerSub: { fontFamily: 'Nunito_700Bold', fontSize: 13, color: 'rgba(255,255,255,0.9)', marginTop: 2 },
-  adRewardBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' },
-  adRewardText: { fontFamily: 'Nunito_900Black', fontSize: 16, color: 'white' },
+  // --- AD BANNER (REKLAM ALANI) ---
+  adBannerCard: { 
+    marginHorizontal: 20, 
+    marginBottom: 24, 
+    borderRadius: 24, 
+    shadowColor: palet.pink, 
+    shadowOpacity: 0.3, 
+    shadowRadius: 12, 
+    shadowOffset: { width: 0, height: 6 }, 
+    elevation: 6 
+  },
+  adBannerGradient: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    padding: 20, 
+    borderRadius: 24 
+  },
+  adBannerInfo: { 
+    flexDirection: 'row', 
+    alignItems: 'center' 
+  },
+  adIconContainer: { 
+    backgroundColor: 'white', 
+    width: 50, 
+    height: 50, 
+    borderRadius: 25, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    shadowColor: '#000', 
+    shadowOpacity: 0.1, 
+    shadowRadius: 8, 
+    elevation: 4 
+  },
+  adBannerTitle: { 
+    fontFamily: 'Nunito_900Black', 
+    fontSize: 18, 
+    color: 'white', 
+    letterSpacing: 0.5 
+  },
+  adBannerSub: { 
+    fontFamily: 'Nunito_700Bold', 
+    fontSize: 13, 
+    color: 'rgba(255,255,255,0.9)', 
+    marginTop: 2 
+  },
+  adRewardBox: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: 'rgba(255,255,255,0.25)', 
+    paddingHorizontal: 14, 
+    paddingVertical: 10, 
+    borderRadius: 16, 
+    borderWidth: 1, 
+    borderColor: 'rgba(255,255,255,0.5)' 
+  },
+  adRewardText: { 
+    fontFamily: 'Nunito_900Black', 
+    fontSize: 16, 
+    color: 'white' 
+  },
 
-  // JOKER CARDS
-  jokerCard: { flexDirection: 'row', backgroundColor: 'white', width: width * 0.82, marginRight: 16, padding: 16, borderRadius: 28, borderWidth: 1, borderColor: 'rgba(0,0,0,0.03)', shadowColor: '#94A3B8', shadowOpacity: 0.15, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
-  jokerIconBg: { width: 80, height: 80, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
-  jokerImage: { width: 48, height: 48 },
-  jokerInfo: { flex: 1, marginLeft: 16, justifyContent: 'center' },
-  jokerName: { fontFamily: 'Nunito_900Black', fontSize: 17, color: palet.textDark, letterSpacing: -0.2 },
-  jokerDesc: { fontFamily: 'Nunito_600SemiBold', fontSize: 12, color: '#64748B', marginTop: 4, lineHeight: 18 },
+  // --- JOKER CARDS (JOKER KARTLARI) ---
+  jokerCard: { 
+    flexDirection: 'row', 
+    backgroundColor: 'white', 
+    width: width * 0.82, 
+    marginRight: 16, 
+    padding: 16, 
+    borderRadius: 28, 
+    borderWidth: 1, 
+    borderColor: 'rgba(0,0,0,0.03)', 
+    shadowColor: '#94A3B8', 
+    shadowOpacity: 0.15, 
+    shadowRadius: 15, 
+    shadowOffset: { width: 0, height: 8 }, 
+    elevation: 4 
+  },
+  jokerIconBg: { 
+    width: 80, 
+    height: 80, 
+    borderRadius: 24, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  jokerImage: { 
+    width: 48, 
+    height: 48 
+  },
+  jokerInfo: { 
+    flex: 1, 
+    marginLeft: 16, 
+    justifyContent: 'center' 
+  },
+  jokerName: { 
+    fontFamily: 'Nunito_900Black', 
+    fontSize: 17, 
+    color: palet.textDark, 
+    letterSpacing: -0.2 
+  },
+  jokerDesc: { 
+    fontFamily: 'Nunito_600SemiBold', 
+    fontSize: 12, 
+    color: '#64748B', 
+    marginTop: 4, 
+    lineHeight: 18 
+  },
 
-  // BOX CARDS (GRID)
-  gridContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 15 },
-  boxCard: { width: cardWidth, backgroundColor: 'white', borderRadius: 28, padding: 18, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.03)', shadowColor: '#94A3B8', shadowOpacity: 0.15, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
-  boxIconBg: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
-  boxName: { fontFamily: 'Nunito_900Black', fontSize: 15, color: palet.textDark, textAlign: 'center', letterSpacing: -0.2 },
-  boxAmount: { fontFamily: 'Nunito_800ExtraBold', fontSize: 13, color: '#64748B', marginTop: 6 },
+  // --- BOX CARDS (IZGARA DÜZENİ) ---
+  gridContainer: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    paddingHorizontal: 20, 
+    marginBottom: 15 
+  },
+  boxCard: { 
+    width: cardWidth, 
+    backgroundColor: 'white', 
+    borderRadius: 28, 
+    padding: 18, 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: 'rgba(0,0,0,0.03)', 
+    shadowColor: '#94A3B8', 
+    shadowOpacity: 0.15, 
+    shadowRadius: 15, 
+    shadowOffset: { width: 0, height: 8 }, 
+    elevation: 4 
+  },
+  boxIconBg: { 
+    width: 70, 
+    height: 70, 
+    borderRadius: 35, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginBottom: 16 
+  },
+  boxName: { 
+    fontFamily: 'Nunito_900Black', 
+    fontSize: 15, 
+    color: palet.textDark, 
+    textAlign: 'center', 
+    letterSpacing: -0.2 
+  },
+  boxAmount: { 
+    fontFamily: 'Nunito_800ExtraBold', 
+    fontSize: 13, 
+    color: '#64748B', 
+    marginTop: 6 
+  },
   
-  // BUTTONS & BADGES
-  actionButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 10, borderRadius: 14 },
-  actionButtonText: { fontFamily: 'Nunito_900Black', fontSize: 13, color: 'white', letterSpacing: 0.5 },
-  badge: { position: 'absolute', top: -12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, zIndex: 10, shadowColor: '#FF007A', shadowOpacity: 0.4, shadowRadius: 6, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
-  badgeText: { color: 'white', fontSize: 9, fontFamily: 'Nunito_900Black', letterSpacing: 1 },
+  // --- BUTTONS & BADGES (BUTONLAR VE ETİKETLER) ---
+  actionButton: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    paddingVertical: 10, 
+    borderRadius: 14 
+  },
+  actionButtonText: { 
+    fontFamily: 'Nunito_900Black', 
+    fontSize: 13, 
+    color: 'white', 
+    letterSpacing: 0.5 
+  },
+  badge: { 
+    position: 'absolute', 
+    top: -12, 
+    paddingHorizontal: 12, 
+    paddingVertical: 6, 
+    borderRadius: 12, 
+    zIndex: 10, 
+    shadowColor: '#FF007A', 
+    shadowOpacity: 0.4, 
+    shadowRadius: 6, 
+    shadowOffset: { width: 0, height: 4 }, 
+    elevation: 6 
+  },
+  badgeText: { 
+    color: 'white', 
+    fontSize: 9, 
+    fontFamily: 'Nunito_900Black', 
+    letterSpacing: 1 
+  },
 
-  // MODAL (BOTTOM SHEET)
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: 'white', borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingHorizontal: 30, paddingBottom: Platform.OS === 'ios' ? 40 : 30, paddingTop: 15, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20, shadowOffset: { width: 0, height: -10 }, elevation: 20 },
-  modalDragIndicator: { width: 40, height: 5, backgroundColor: '#E2E8F0', borderRadius: 3, marginBottom: 20 },
-  closeBtn: { position: 'absolute', top: 20, right: 24, zIndex: 10 },
-  modalIconBg: { width: 130, height: 130, borderRadius: 65, justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
-  modalTitle: { fontFamily: 'Nunito_900Black', fontSize: 26, color: palet.textDark, letterSpacing: -0.5 },
-  modalDesc: { fontFamily: 'Nunito_600SemiBold', fontSize: 15, color: '#64748B', textAlign: 'center', marginTop: 12, lineHeight: 22, paddingHorizontal: 10 },
-  modalAmountText: { fontFamily: 'Nunito_900Black', fontSize: 18, color: palet.pink, marginTop: 20, letterSpacing: 0.5 },
-  buyBtn: { width: '100%', marginTop: 30, shadowColor: palet.pink, shadowOpacity: 0.4, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
-  buyBtnGradient: { paddingVertical: 20, borderRadius: 24, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' },
-  buyBtnText: { color: 'white', fontFamily: 'Nunito_900Black', fontSize: 16, letterSpacing: 0.5 },
+  // --- MODAL (BOTTOM SHEET - ALT PANEL) ---
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(15, 23, 42, 0.6)', 
+    justifyContent: 'flex-end' 
+  },
+  modalContent: { 
+    backgroundColor: 'white', 
+    borderTopLeftRadius: 36, 
+    borderTopRightRadius: 36, 
+    paddingHorizontal: 30, 
+    paddingBottom: Platform.OS === 'ios' ? 40 : 30, 
+    paddingTop: 15, 
+    alignItems: 'center', 
+    shadowColor: '#000', 
+    shadowOpacity: 0.2, 
+    shadowRadius: 20, 
+    shadowOffset: { width: 0, height: -10 }, 
+    elevation: 20 
+  },
+  modalDragIndicator: { 
+    width: 40, 
+    height: 5, 
+    backgroundColor: '#E2E8F0', 
+    borderRadius: 3, 
+    marginBottom: 20 
+  },
+  closeBtn: { 
+    position: 'absolute', 
+    top: 20, 
+    right: 24, 
+    zIndex: 10 
+  },
+  modalIconBg: { 
+    width: 130, 
+    height: 130, 
+    borderRadius: 65, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginBottom: 24 
+  },
+  modalTitle: { 
+    fontFamily: 'Nunito_900Black', 
+    fontSize: 26, 
+    color: palet.textDark, 
+    letterSpacing: -0.5 
+  },
+  modalDesc: { 
+    fontFamily: 'Nunito_600SemiBold', 
+    fontSize: 15, 
+    color: '#64748B', 
+    textAlign: 'center', 
+    marginTop: 12, 
+    lineHeight: 22, 
+    paddingHorizontal: 10 
+  },
+  modalAmountText: { 
+    fontFamily: 'Nunito_900Black', 
+    fontSize: 18, 
+    color: palet.pink, 
+    marginTop: 20, 
+    letterSpacing: 0.5 
+  },
+  buyBtn: { 
+    width: '100%', 
+    marginTop: 30, 
+    shadowColor: palet.pink, 
+    shadowOpacity: 0.4, 
+    shadowRadius: 15, 
+    shadowOffset: { width: 0, height: 8 }, 
+    elevation: 8 
+  },
+  buyBtnGradient: { 
+    paddingVertical: 20, 
+    borderRadius: 24, 
+    alignItems: 'center', 
+    flexDirection: 'row', 
+    justifyContent: 'center' 
+  },
+  buyBtnText: { 
+    color: 'white', 
+    fontFamily: 'Nunito_900Black', 
+    fontSize: 16, 
+    letterSpacing: 0.5 
+  },
 
-  // 🚀 CUSTOM ALERT STYLES
-  alertOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  alertContainer: { width: width * 0.85, backgroundColor: 'white', borderRadius: 30, padding: 25, alignItems: 'center', elevation: 20 },
-  alertHeaderIcon: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginBottom: 20, marginTop: -60, borderWidth: 5, borderColor: 'white' },
-  alertTitle: { fontSize: 20, fontFamily: 'Nunito_900Black', color: palet.textDark, marginBottom: 10, textAlign: 'center' },
-  alertMessage: { fontSize: 14, fontFamily: 'Nunito_600SemiBold', color: '#64748B', textAlign: 'center', lineHeight: 20, marginBottom: 25 },
-  alertButtonGroup: { flexDirection: 'row', width: '100%', justifyContent: 'center' },
-  alertBtn: { height: 50, borderRadius: 15, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', minWidth: 100 },
-  alertBtnConfirm: { flex: 1, shadowColor: palet.pink, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
-  alertBtnCancel: { flex: 1, backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#E2E8F0' },
-  alertBtnGradient: { flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' },
-  alertBtnTextConfirm: { color: 'white', fontSize: 15, fontFamily: 'Nunito_800ExtraBold' },
-  alertBtnTextCancel: { color: '#64748B', fontSize: 15, fontFamily: 'Nunito_800ExtraBold' }
+  // --- CUSTOM ALERT STYLES (ÖZEL UYARI STİLLERİ) ---
+  alertOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.5)', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  alertContainer: { 
+    width: width * 0.85, 
+    backgroundColor: 'white', 
+    borderRadius: 30, 
+    padding: 25, 
+    alignItems: 'center', 
+    elevation: 20 
+  },
+  alertHeaderIcon: { 
+    width: 70, 
+    height: 70, 
+    borderRadius: 35, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginBottom: 20, 
+    marginTop: -60, 
+    borderWidth: 5, 
+    borderColor: 'white' 
+  },
+  alertTitle: { 
+    fontSize: 20, 
+    fontFamily: 'Nunito_900Black', 
+    color: palet.textDark, 
+    marginBottom: 10, 
+    textAlign: 'center' 
+  },
+  alertMessage: { 
+    fontSize: 14, 
+    fontFamily: 'Nunito_600SemiBold', 
+    color: '#64748B', 
+    textAlign: 'center', 
+    lineHeight: 20, 
+    marginBottom: 25 
+  },
+  alertButtonGroup: { 
+    flexDirection: 'row', 
+    width: '100%', 
+    justifyContent: 'center' 
+  },
+  alertBtn: { 
+    height: 50, 
+    borderRadius: 15, 
+    overflow: 'hidden', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    minWidth: 100 
+  },
+  alertBtnConfirm: { 
+    flex: 1, 
+    shadowColor: palet.pink, 
+    shadowOpacity: 0.3, 
+    shadowRadius: 8, 
+    elevation: 5 
+  },
+  alertBtnCancel: { 
+    flex: 1, 
+    backgroundColor: '#F1F5F9', 
+    borderWidth: 1, 
+    borderColor: '#E2E8F0' 
+  },
+  alertBtnGradient: { 
+    flex: 1, 
+    width: '100%', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  alertBtnTextConfirm: { 
+    color: 'white', 
+    fontSize: 15, 
+    fontFamily: 'Nunito_800ExtraBold' 
+  },
+  alertBtnTextCancel: { 
+    color: '#64748B', 
+    fontSize: 15, 
+    fontFamily: 'Nunito_800ExtraBold' 
+  }
 });

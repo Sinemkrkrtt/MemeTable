@@ -4,8 +4,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 const ScoreScreen = ({ scores, navigation, onNewGame }) => {
-  // 🚀 DÜZELTME: Ekran genişliğini içeri aldık. Böylece ekran yatay (landscape)
-  // olduğunda eski dikey ölçüde takılı kalmayıp yatay genişliği alacak!
   const { width } = useWindowDimensions(); 
 
   const sorted = Object.entries(scores)
@@ -19,7 +17,6 @@ const ScoreScreen = ({ scores, navigation, onNewGame }) => {
         style={StyleSheet.absoluteFill} 
       />
       
-      {/* 🚀 DÜZELTME: Genişliği dinamik olarak buraya verdik */}
       <View style={[styles.topGlow, { width: width }]} />
       
       <View style={styles.modalWindow}>
@@ -94,7 +91,6 @@ const ScoreScreen = ({ scores, navigation, onNewGame }) => {
             );
           })}
         </View>
-
         <View style={styles.actionRow}>
           <TouchableOpacity style={styles.playBtnContainer} onPress={onNewGame} activeOpacity={0.9}>
             <View style={styles.btnAura} />
@@ -105,9 +101,6 @@ const ScoreScreen = ({ scores, navigation, onNewGame }) => {
             >
               <View style={styles.innerReflect} />
               <Text style={styles.playBtnText}>YENİDEN OYNA</Text>
-              
-          
-
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -115,8 +108,8 @@ const ScoreScreen = ({ scores, navigation, onNewGame }) => {
     </View>
   );
 };
-
 const styles = StyleSheet.create({
+  // --- OVERLAY VE ARKA PLAN EFEKTLERİ ---
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.1)', 
@@ -125,9 +118,26 @@ const styles = StyleSheet.create({
     zIndex: 999999,
   },
   topGlow: {
-    position: 'absolute', top: -100, height: 300,
-    backgroundColor: '#FFF', opacity: 0.2, borderRadius: 150, transform: [{ scaleX: 2 }],
+    position: 'absolute', 
+    top: -100, 
+    height: 300,
+    backgroundColor: '#FFF', 
+    opacity: 0.2, 
+    borderRadius: 150, 
+    transform: [{ scaleX: 2 }],
   },
+  glassReflect: {
+    position: 'absolute', 
+    top: -50, 
+    left: -50, 
+    width: 200, 
+    height: 200,
+    backgroundColor: 'rgba(255, 225, 159, 0.4)', 
+    borderRadius: 100, 
+    transform: [{ rotate: '45deg' }],
+  },
+
+  // --- ANA MODAL PENCERESİ ---
   modalWindow: {
     width: '75%', 
     height: '92%',
@@ -140,7 +150,9 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.5)',
     elevation: 30,
-    shadowColor: '#FF69EB', shadowOpacity: 0.3, shadowRadius: 20,
+    shadowColor: '#FF69EB', 
+    shadowOpacity: 0.3, 
+    shadowRadius: 20,
   },
   closeButton: {
     position: 'absolute',
@@ -154,72 +166,186 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  glassReflect: {
-    position: 'absolute', top: -50, left: -50, width: 200, height: 200,
-    backgroundColor: 'rgba(255, 225, 159, 0.4)', borderRadius: 100, transform: [{ rotate: '45deg' }],
+
+  // --- HEADER VE BAŞLIK ALANI ---
+  headerContainer: { 
+    alignItems: 'center', 
+    marginTop: 5 
   },
-  headerContainer: { alignItems: 'center', marginTop: 5 },
   statusBadge: { 
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF9D4193', 
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10, marginBottom: 12 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#FF9D4193', 
+    paddingHorizontal: 14, 
+    paddingVertical: 6, 
+    borderRadius: 10, 
+    marginBottom: 12 
   },
-  statusText: { color: '#FFF', fontSize: 10, fontWeight: '900', letterSpacing: 2, marginLeft: 5 },
-  titleArea: { justifyContent: 'center', alignItems: 'center' },
+  statusText: { 
+    color: '#FFF', 
+    fontSize: 10, 
+    fontWeight: '900', 
+    letterSpacing: 2, 
+    marginLeft: 5 
+  },
+  titleArea: { 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
   headerTitleGlow: {
-    position: 'absolute', color: '#FF69EB', fontSize: 36, fontWeight: '900',
-    letterSpacing: 2, opacity: 0.3,marginBottom:5
+    position: 'absolute', 
+    color: '#FF69EB', 
+    fontSize: 36, 
+    fontWeight: '900',
+    letterSpacing: 2, 
+    opacity: 0.3,
+    marginBottom: 5
   },
   headerTitle: { 
-    color: '#FF86C8', fontSize: 36, fontWeight: '900', 
-    letterSpacing: 2, fontFamily: 'Nunito_900Black' ,marginBottom:5
+    color: '#FF86C8', 
+    fontSize: 36, 
+    fontWeight: '900', 
+    letterSpacing: 2, 
+    fontFamily: 'Nunito_900Black',
+    marginBottom: 5
   },
+
+  // --- KÜRSÜ (PODIUM) VE KARTLAR ---
   podiumContainer: { 
-    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', 
-    width: '100%', height: '50%', gap: 15 
+    flexDirection: 'row', 
+    alignItems: 'flex-end', 
+    justifyContent: 'center', 
+    width: '100%', 
+    height: '50%', 
+    gap: 15 
   },
   podiumCard: { 
-    flex: 1, borderRadius: 24, padding: 8, alignItems: 'center',
-    justifyContent: 'flex-end', borderWidth: 2, zIndex: 1
+    flex: 1, 
+    borderRadius: 24, 
+    padding: 8, 
+    alignItems: 'center',
+    justifyContent: 'flex-end', 
+    borderWidth: 2, 
+    zIndex: 1
   },
   firstCard: { 
-    backgroundColor: '#FFFBE6', transform: [{ scale: 1.05 }],
-    shadowColor: '#FFDC5E', shadowOpacity: 0.5, shadowRadius: 15, elevation: 10
+    backgroundColor: '#FFFBE6', 
+    transform: [{ scale: 1.05 }],
+    shadowColor: '#FFDC5E', 
+    shadowOpacity: 0.5, 
+    shadowRadius: 15, 
+    elevation: 10
   },
-  myCard: { backgroundColor: '#FFF0F9', borderStyle: 'dashed' },
-  playerInfo: { alignItems: 'center', width: '100%', marginBottom: 15, zIndex: 10 },
-  playerName: { fontSize: 14, fontWeight: '900', color: '#555', marginBottom: 8 },
-  meTextBold: { color: '#FF69EB' },
-  winnerText: { color: '#CC9900', fontSize: 16 },
-  scorePill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14 },
-  scoreText: { fontSize: 13, fontWeight: '900' },
+  myCard: { 
+    backgroundColor: '#FFF0F9', 
+    borderStyle: 'dashed' 
+  },
+
+  // --- OYUNCU BİLGİLERİ VE SKOR ---
+  playerInfo: { 
+    alignItems: 'center', 
+    width: '100%', 
+    marginBottom: 15, 
+    zIndex: 10 
+  },
+  playerName: { 
+    fontSize: 14, 
+    fontWeight: '900', 
+    color: '#555', 
+    marginBottom: 8 
+  },
+  meTextBold: { 
+    color: '#FF69EB' 
+  },
+  winnerText: { 
+    color: '#CC9900', 
+    fontSize: 16 
+  },
+  scorePill: { 
+    paddingHorizontal: 12, 
+    paddingVertical: 6, 
+    borderRadius: 14 
+  },
+  scoreText: { 
+    fontSize: 13, 
+    fontWeight: '900' 
+  },
   rankBadge: { 
-    width: 32, height: 32, borderRadius: 16, justifyContent: 'center', 
-    alignItems: 'center', marginBottom: 10, elevation: 5, zIndex: 10 
+    width: 32, 
+    height: 32, 
+    borderRadius: 16, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginBottom: 10, 
+    elevation: 5, 
+    zIndex: 10 
   },
-  rankText: { fontSize: 14, fontWeight: '900', color: '#FFF' },
-  crown: { position: 'absolute', top: -35, fontSize: 36, zIndex: 20 },
+  rankText: { 
+    fontSize: 14, 
+    fontWeight: '900', 
+    color: '#FFF' 
+  },
+  crown: { 
+    position: 'absolute', 
+    top: -35, 
+    fontSize: 36, 
+    zIndex: 20 
+  },
+
+  // --- ALT AKSİYON ALANI VE BUTON ---
   actionRow: { 
     width: '100%', 
     justifyContent: 'center', 
     alignItems: 'center' 
   },
-  playBtnContainer: { width: 220, height: 62, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
+  playBtnContainer: { 
+    width: 220, 
+    height: 62, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginTop: 10 
+  },
   btnAura: {
-    position: 'absolute', width: '90%', height: '60%', backgroundColor: '#FF69EB',
-    borderRadius: 20, opacity: 0.4, 
+    position: 'absolute', 
+    width: '90%', 
+    height: '60%', 
+    backgroundColor: '#FF69EB',
+    borderRadius: 20, 
+    opacity: 0.4, 
   },
   playBtnGradient: {
-    width: '100%', height: '80%', borderRadius: 20,
-    flexDirection: 'row', alignItems: 'center', 
-    paddingHorizontal: 18, elevation: 10, justifyContent: 'center', 
+    width: '100%', 
+    height: '80%', 
+    borderRadius: 20,
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingHorizontal: 18, 
+    elevation: 10, 
+    justifyContent: 'center', 
   },
   innerReflect: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: '40%', backgroundColor: 'rgba(255, 255, 255, 0.2)'
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    height: '40%', 
+    backgroundColor: 'rgba(255, 255, 255, 0.2)'
   },
-  playBtnText: { color: '#FFF', fontSize: 14, fontWeight: '900', letterSpacing: 1 , textAlign: 'center' },
+  playBtnText: { 
+    color: '#FFF', 
+    fontSize: 14, 
+    fontWeight: '900', 
+    letterSpacing: 1, 
+    textAlign: 'center' 
+  },
   btnIconCircle: { 
-    width: 32, height: 32, borderRadius: 10, backgroundColor: 'transparent', 
-    justifyContent: 'center', alignItems: 'center', position: 'absolute', 
+    width: 32, 
+    height: 32, 
+    borderRadius: 10, 
+    backgroundColor: 'transparent', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    position: 'absolute', 
     right: 15, 
   },
 });

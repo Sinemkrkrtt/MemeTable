@@ -13,12 +13,16 @@ export const palet = {
 };
 
 export const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: palet.bg },
- scrollContent: { 
-    flexGrow: 1, // Ekran boşluğunu içeriğe yayar
+  // --- ANA KONTEYNER VE İÇERİK ---
+  container: { 
+    flex: 1, 
+    backgroundColor: palet.bg 
+  },
+  scrollContent: { 
+    flexGrow: 1, 
     paddingHorizontal: 25, 
-    paddingBottom: 40, // Alta biraz daha nefes payı
-    justifyContent: 'space-between' // İçerikleri ekrana orantılı dağıtır
+    paddingBottom: 40, 
+    justifyContent: 'space-between' 
   },
 
   // --- PREMİUM HEADER ---
@@ -51,9 +55,11 @@ export const styles = StyleSheet.create({
     borderRadius: 14,          
     marginRight: 12,           
   },
-  vaultItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  
-  // 🔥 DÜZELTME: İki ayrı vaultValue birleştirildi
+  vaultItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 8 
+  },
   vaultValue: { 
     fontFamily: 'Nunito_900Black', 
     fontSize: 16, 
@@ -77,41 +83,87 @@ export const styles = StyleSheet.create({
     elevation: 4,
     borderWidth: 1,
     borderColor: '#F0F0F0',
-    transform: [{ rotate: '45deg' }], // 🔥 Premium Elmas Dokunuşu
+    transform: [{ rotate: '45deg' }], 
     shadowColor: palet.peach,
     shadowOpacity: 0.8,
     shadowRadius: 6,
   },
-  logoutIcon: { transform: [{ rotate: '-45deg' }] },
+  logoutIcon: { 
+    transform: [{ rotate: '-45deg' }] 
+  },
 
   // --- LOGO ALANI ---
- logoArea: { 
+  logoArea: { 
     width: '100%', 
-    // Yüksekliği ekranın %28'i kadar yap. Uzun telefonda büyür, kısa telefonda küçülür!
     height: Dimensions.get('window').height * 0.28, 
-    minHeight: 200, // Ama ne olursa olsun 200'den küçük olmasın
+    minHeight: 200, 
     marginTop: 15, 
     marginBottom: 15, 
     justifyContent: 'center', 
     alignItems: 'center',
   },
-  homeLogoLarge: { width: '90%', height: '100%', borderRadius: 70 },
+  homeLogoLarge: { 
+    width: '90%', 
+    height: '100%', 
+    borderRadius: 70 
+  },
 
-  // --- GRID BUTONLARI ---
-  gridContainer: { flexDirection: 'row', gap: 15 },
-  bigActionCard: { flex: 1, borderRadius: 32, overflow: 'hidden', elevation: 12, height: 210 },
-  rightColumn: { flex: 1, gap: 15 },
-  smallActionCard: { borderRadius: 24, overflow: 'hidden', elevation: 8, height: 97 },
-  cardInner: { flex: 1, padding: 18, justifyContent: 'space-between' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  topRightArrow: { transform: [{ rotate: '45deg' }], opacity: 0.8 },
+  // --- GRID BUTONLARI VE KARTLAR ---
+  gridContainer: { 
+    flexDirection: 'row', 
+    gap: 15 
+  },
+  bigActionCard: { 
+    flex: 1, 
+    borderRadius: 32, 
+    overflow: 'hidden', 
+    elevation: 12, 
+    height: 210 
+  },
+  rightColumn: { 
+    flex: 1, 
+    gap: 15 
+  },
+  smallActionCard: { 
+    borderRadius: 24, 
+    overflow: 'hidden', 
+    elevation: 8, 
+    height: 97 
+  },
+  cardInner: { 
+    flex: 1, 
+    padding: 18, 
+    justifyContent: 'space-between' 
+  },
+  cardHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'flex-start' 
+  },
+  topRightArrow: { 
+    transform: [{ rotate: '45deg' }], 
+    opacity: 0.8 
+  },
   cardTitleBig: { 
-    color: 'white', fontSize: 26, fontFamily: 'Nunito_900Black', letterSpacing: 1,
-    textShadowColor: 'rgba(0,0,0,0.1)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2
+    color: 'white', 
+    fontSize: 26, 
+    fontFamily: 'Nunito_900Black', 
+    letterSpacing: 1,
+    textShadowColor: 'rgba(0,0,0,0.1)', 
+    textShadowOffset: { width: 0, height: 1 }, 
+    textShadowRadius: 2
   },
   cardSubTitle: {
-    color: 'rgba(255,255,255,0.9)', fontSize: 11, letterSpacing: 2, fontFamily: 'Nunito_800ExtraBold', marginTop: 4
+    color: 'rgba(255,255,255,0.9)', 
+    fontSize: 11, 
+    letterSpacing: 2, 
+    fontFamily: 'Nunito_800ExtraBold', 
+    marginTop: 4
   },
-  cardTitleSmall: { color: 'white', fontSize: 16, fontFamily: 'Nunito_900Black', letterSpacing: 0.5 },
-
+  cardTitleSmall: { 
+    color: 'white', 
+    fontSize: 16, 
+    fontFamily: 'Nunito_900Black', 
+    letterSpacing: 0.5 
+  },
 });

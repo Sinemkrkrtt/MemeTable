@@ -5,22 +5,20 @@ import { Ionicons } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');
 const isPortrait = height > width;
-const modalWidth = isPortrait ? '85%' : '50%'; // Dikeyde geniş, yatayda derli toplu
+const modalWidth = isPortrait ? '85%' : '50%'; 
 
 const DisconnectModal = ({ visible, onQuit }) => {
-  // 🎨 Yeni Senior Palet: Canlı Pembe -> Sıcak Turuncu
-  const gradientColors = ['#FF45E6','#FF69EB', '#FF9A6A', '#FA7D43']; 
+const gradientColors = ['#FF45E6','#FF69EB', '#FF9A6A', '#FA7D43']; 
 
-  // 🚀 ANİMASYON DEĞERİ (Pulse Efekti İçin)
-  const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => {
+const pulseAnim = useRef(new Animated.Value(1)).current;
+
+useEffect(() => {
     if (visible) {
-      // Noktanın nefes alıp vermesi için sonsuz döngü
      Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue: 0.6, // 0.3 yerine 0.6 daha yumuşak bir sönme yapar
+          toValue: 0.6,
           duration: 800,
           useNativeDriver: true,
         }),
@@ -32,7 +30,7 @@ const DisconnectModal = ({ visible, onQuit }) => {
       ])
     ).start();
     } else {
-      pulseAnim.setValue(1); // Modal kapanırsa animasyonu sıfırla
+      pulseAnim.setValue(1); 
     }
   }, [visible, pulseAnim]);
 
@@ -44,7 +42,6 @@ const DisconnectModal = ({ visible, onQuit }) => {
       supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']} 
     >
       <View style={styles.overlay}>
-        {/* Modern şık bir gölge için arka plan kartı */}
         <View style={styles.glassContainer}>
           <View style={styles.modalContent}>
             
@@ -78,14 +75,13 @@ const DisconnectModal = ({ visible, onQuit }) => {
                   styles.pulseCircle, 
                   { 
                     backgroundColor: '#FF69EB',
-                    opacity: pulseAnim, // 🚀 Şeffaflık animasyonu
-                    transform: [{ scale: pulseAnim }] // 🚀 Büyüyüp küçülme animasyonu
+                    opacity: pulseAnim, 
+                    transform: [{ scale: pulseAnim }] 
                   }
                 ]} 
               />
               <Text style={styles.reconnectingText}>Yeniden bağlanıyor...</Text>
             </View>
-
           </View>
         </View>
       </View>
@@ -96,12 +92,12 @@ const DisconnectModal = ({ visible, onQuit }) => {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(20, 15, 25, 0.9)', // Daha koyu, sofistike bir arka plan
+    backgroundColor: 'rgba(20, 15, 25, 0.9)', 
     justifyContent: 'center',
     alignItems: 'center',
   },
 glassContainer: {
-    width: modalWidth, // Sabit %60 yerine dinamik genişliği verdik
+    width: modalWidth,
     backgroundColor: 'white',
     borderRadius: 35,
     padding: 3,
@@ -111,7 +107,7 @@ glassContainer: {
     elevation: 15,
   },
   pulseCircle: {
-    width: 12, // 10 yerine 12 daha iyi bir odak noktası yaratır
+    width: 12,
     height: 12,
     borderRadius: 6,
     marginRight: 10,

@@ -1,11 +1,9 @@
-import 'react-native-url-polyfill/auto'; // KESİNLİKLE EN ÜSTTE OLMALI
+import 'react-native-url-polyfill/auto'; 
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './src/services/firebase';
-
-// Ekranlar
 import AuthScreen from './src/screens/AuthScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import LobbyScreen from './src/screens/LobbyScreen'; 
@@ -32,16 +30,16 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  if (loading) return null; // Burası okey
+  if (loading) return null; 
 
   return (
     <NavigationContainer>
       <Stack.Navigator 
-        initialRouteName={user ? "Home" : "AuthScreen"} // Giriş durumuna göre başlangıç noktasını netleştir
+        initialRouteName={user ? "Home" : "AuthScreen"} 
         screenOptions={{ 
           headerShown: false,
-          animationEnabled: true, // Geçişler daha yumuşak olur
-          gestureEnabled: false    // Oyun sırasında yanlışlıkla geri kaydırmayı önler
+          animationEnabled: true, 
+          gestureEnabled: false    
         }}
       >
         {user ? (
@@ -59,7 +57,6 @@ export default function App() {
                 <Stack.Screen name="RandomMatchScreen" component={RandomMatchScreen}/>
           </>
         ) : (
-          // ❌ KULLANICI ÇIKIŞ YAPMIŞSA SADECE BU EKRAN GÖRÜNÜR
           <Stack.Screen name="AuthScreen" component={AuthScreen} />
         )}
       </Stack.Navigator>

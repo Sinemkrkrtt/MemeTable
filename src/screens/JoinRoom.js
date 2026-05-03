@@ -10,17 +10,13 @@ import { useIsFocused } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
-// 1. ESKİ async playSound FONKSİYONUNU BURADAN TAMAMEN SİLDİK
-
 export default function JoinRoom({ navigation, route }) {
-  // 2. YENİ SES HOOK'LARI EKLENDİ (Sayfa açılırken yüklenir)
   const clickSound = useAudioPlayer(require('../../assets/sounds/click.mp3'));
   const readySound = useAudioPlayer(require('../../assets/sounds/ready.mp3'));
   const joinSound = useAudioPlayer(require('../../assets/sounds/join.mp3'));
   const startSound = useAudioPlayer(require('../../assets/sounds/start.mp3'));
   const errorSound = useAudioPlayer(require('../../assets/sounds/error.mp3'));
 
-  // 3. YENİ VE HIZLI playSound FONKSİYONU
   const playSound = (type) => {
     try {
       if (type === 'click') { clickSound.seekTo(0); clickSound.play(); }
@@ -33,7 +29,6 @@ export default function JoinRoom({ navigation, route }) {
     }
   };
 
-  // 4. SES AYARLARI (Sessizde çalma izni vb.)
   useEffect(() => {
     const setupAudio = async () => {
       try {
@@ -44,8 +39,6 @@ export default function JoinRoom({ navigation, route }) {
     };
     setupAudio();
   }, []);
-
-  // --- BURADAN AŞAĞISI KESİNLİKLE DEĞİŞTİRİLMEDİ ---
 
   const isFocused = useIsFocused();
   const [permission, requestPermission] = useCameraPermissions();
@@ -74,13 +67,10 @@ export default function JoinRoom({ navigation, route }) {
 
     playSound('join');
 
-    // 🚀 DÜZELTME: Firebase'e gidip beklemeye gerek yok! 
-    // AvatarScreen'den gelen hazır ve güncel veriyi kullanıyoruz.
     const params = route.params || {};
     const selectedAvatar = params.userAvatar || params.myAvatarSeed || 'Oliver';
     const currentUserName = params.myName || auth.currentUser?.displayName || 'Oyuncu';
 
-    // Bekleme yapmadan FİŞEK GİBİ Lobiye uçur!
     navigation.replace('LobbyScreen', { 
       roomId: cleanCode, 
       isHost: false,
@@ -88,13 +78,11 @@ export default function JoinRoom({ navigation, route }) {
       userAvatar: selectedAvatar,
       myAvatarSeed: selectedAvatar
     });
-
-    // Replace kullandığımız için timeout'a gerek kalmayabilir ama güvenlik için dursun.
     setTimeout(() => setScanned(false), 1500);
   };
 
   const handleBackPress = () => {
-    playSound('click'); // 🔊 GERİ BUTONU SESİ
+    playSound('click');
     navigation.goBack();
   };
 
@@ -103,7 +91,7 @@ export default function JoinRoom({ navigation, route }) {
        playSound('error');
        return;
     }
-    playSound('click'); // 🔊 BUTONA BASMA SESİ
+    playSound('click');
     handleJoinRoom(manualCode);
   };
 
@@ -116,8 +104,7 @@ export default function JoinRoom({ navigation, route }) {
         <View style={styles.permissionCard}>
           <Ionicons name="camera" size={80} color="#FF69EB" style={{marginBottom: 20}} />
           <Text style={styles.permissionTitle}>Kamera İzni Gerekli</Text>
-          <Text style={styles.permissionText}>Odalara QR kod ile hızlıca katılabilmek için kameralara erişmemiz gerekiyor Sinem! 📸</Text>
-          
+          <Text style={styles.permissionText}>Odalara QR kod ile hızlıca katılabilmek için kameralara erişmemiz gerekiyor! 📸</Text>
           <TouchableOpacity style={styles.permissionBtn} onPress={() => {
               playSound('click'); // 🔊 İZİN BUTONU SESİ
               requestPermission();
@@ -134,7 +121,7 @@ export default function JoinRoom({ navigation, route }) {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F3F4F6" />
-      
+
       <View style={styles.headerNav}>
          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
            <Ionicons name="chevron-back" size={24} color="#1F2937" />
@@ -200,39 +187,257 @@ export default function JoinRoom({ navigation, route }) {
     </KeyboardAvoidingView>
   );
 }
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F3F4F6' },
-  headerNav: { flexDirection: 'row', width: '100%', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 20, justifyContent: 'space-between', alignItems: 'center' },
-  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
-  headerTitle: { color: '#1F2937', fontSize: 16, fontWeight: '800', letterSpacing: 1.5 },
-  content: { flex: 1, paddingHorizontal: 24, alignItems: 'center', justifyContent: 'center' },
-  scannerWrapper: { alignItems: 'center', marginBottom: 30 },
-  scannerOutline: { width: width * 0.7, height: width * 0.7, borderRadius: 30, overflow: 'hidden', position: 'relative', shadowColor: '#FF69EB', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 10 },
-  camera: { flex: 1 },
-  corner: { position: 'absolute', width: 40, height: 40, borderWidth: 5 },
-  topLeft: { top: 20, left: 20, borderBottomWidth: 0, borderRightWidth: 0, borderTopLeftRadius: 15 },
-  topRight: { top: 20, right: 20, borderBottomWidth: 0, borderLeftWidth: 0, borderTopRightRadius: 15 },
-  bottomLeft: { bottom: 20, left: 20, borderTopWidth: 0, borderRightWidth: 0, borderBottomLeftRadius: 15 },
-  bottomRight: { bottom: 20, right: 20, borderTopWidth: 0, borderLeftWidth: 0, borderBottomRightRadius: 15 },
-  scannerHint: { marginTop: 16, fontSize: 13, color: '#6B7280', fontWeight: '500' },
-  dividerContainer: { flexDirection: 'row', alignItems: 'center', width: '100%', marginBottom: 30, paddingHorizontal: 20 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
-  dividerText: { marginHorizontal: 15, fontSize: 12, fontWeight: '700', color: '#9CA3AF', letterSpacing: 1 },
-  manualInputContainer: { width: '100%', backgroundColor: '#FFF', padding: 20, borderRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
-  inputLabel: { fontSize: 12, fontWeight: '700', color: '#4B5563', marginBottom: 10, letterSpacing: 0.5 },
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16, paddingHorizontal: 16, marginBottom: 16 },
-  inputIcon: { marginRight: 10 },
-  textInput: { flex: 1, height: 55, fontSize: 18, fontWeight: '800', color: '#111827', letterSpacing: 2 },
-  joinBtnContainer: { height: 55, borderRadius: 16, shadowColor: '#FF69EB', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
-  joinBtnGradient: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderRadius: 16, gap: 10 },
-  joinBtnText: { color: 'white', fontWeight: '800', fontSize: 15, letterSpacing: 1 },
-  permissionContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F3F4F6' },
-  permissionBg: { position: 'absolute', top: 0, width: '100%', height: '40%', borderBottomLeftRadius: 50, borderBottomRightRadius: 50 },
-  permissionCard: { backgroundColor: '#FFF', width: '85%', padding: 30, borderRadius: 30, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
-  permissionTitle: { fontSize: 20, fontWeight: '800', color: '#1F2937', marginBottom: 10 },
-  permissionText: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 30, lineHeight: 22 },
-  permissionBtn: { width: '100%', height: 55, borderRadius: 16, shadowColor: '#FF69EB', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
-  btnGradient: { flex: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 16 },
-  permissionBtnText: { color: 'white', fontWeight: '800', fontSize: 16, letterSpacing: 1 }
+  // --- ANA KONTEYNER VE NAVİGASYON ---
+  container: { 
+    flex: 1, 
+    backgroundColor: '#F3F4F6' 
+  },
+  headerNav: { 
+    flexDirection: 'row', 
+    width: '100%', 
+    paddingHorizontal: 20, 
+    paddingTop: Platform.OS === 'ios' ? 60 : 40, 
+    paddingBottom: 20, 
+    justifyContent: 'space-between', 
+    alignItems: 'center' 
+  },
+  backButton: { 
+    width: 40, 
+    height: 40, 
+    borderRadius: 20, 
+    backgroundColor: '#FFF', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.1, 
+    shadowRadius: 4, 
+    elevation: 3 
+  },
+  headerTitle: { 
+    color: '#1F2937', 
+    fontSize: 16, 
+    fontWeight: '800', 
+    letterSpacing: 1.5 
+  },
+
+  // --- İÇERİK VE TARAYICI (SCANNER) ---
+  content: { 
+    flex: 1, 
+    paddingHorizontal: 24, 
+    alignItems: 'center', 
+    justifyContent: 'center' 
+  },
+  scannerWrapper: { 
+    alignItems: 'center', 
+    marginBottom: 30 
+  },
+  scannerOutline: { 
+    width: width * 0.7, 
+    height: width * 0.7, 
+    borderRadius: 30, 
+    overflow: 'hidden', 
+    position: 'relative', 
+    shadowColor: '#FF69EB', 
+    shadowOffset: { width: 0, height: 10 }, 
+    shadowOpacity: 0.2, 
+    shadowRadius: 20, 
+    elevation: 10 
+  },
+  camera: { 
+    flex: 1 
+  },
+
+  // --- TARAYICI KÖŞE ÇİZGİLERİ ---
+  corner: { 
+    position: 'absolute', 
+    width: 40, 
+    height: 40, 
+    borderWidth: 5 
+  },
+  topLeft: { 
+    top: 20, 
+    left: 20, 
+    borderBottomWidth: 0, 
+    borderRightWidth: 0, 
+    borderTopLeftRadius: 15 
+  },
+  topRight: { 
+    top: 20, 
+    right: 20, 
+    borderBottomWidth: 0, 
+    borderLeftWidth: 0, 
+    borderTopRightRadius: 15 
+  },
+  bottomLeft: { 
+    bottom: 20, 
+    left: 20, 
+    borderTopWidth: 0, 
+    borderRightWidth: 0, 
+    borderBottomLeftRadius: 15 
+  },
+  bottomRight: { 
+    bottom: 20, 
+    right: 20, 
+    borderTopWidth: 0, 
+    borderLeftWidth: 0, 
+    borderBottomRightRadius: 15 
+  },
+  scannerHint: { 
+    marginTop: 16, 
+    fontSize: 13, 
+    color: '#6B7280', 
+    fontWeight: '500' 
+  },
+
+  // --- AYIRAÇ (DIVIDER) ---
+  dividerContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    width: '100%', 
+    marginBottom: 30, 
+    paddingHorizontal: 20 
+  },
+  dividerLine: { 
+    flex: 1, 
+    height: 1, 
+    backgroundColor: '#E5E7EB' 
+  },
+  dividerText: { 
+    marginHorizontal: 15, 
+    fontSize: 12, 
+    fontWeight: '700', 
+    color: '#9CA3AF', 
+    letterSpacing: 1 
+  },
+
+  // --- MANUEL GİRİŞ FORMU ---
+  manualInputContainer: { 
+    width: '100%', 
+    backgroundColor: '#FFF', 
+    padding: 20, 
+    borderRadius: 24, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 10, 
+    elevation: 3 
+  },
+  inputLabel: { 
+    fontSize: 12, 
+    fontWeight: '700', 
+    color: '#4B5563', 
+    marginBottom: 10, 
+    letterSpacing: 0.5 
+  },
+  inputWrapper: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#F9FAFB', 
+    borderWidth: 1, 
+    borderColor: '#E5E7EB', 
+    borderRadius: 16, 
+    paddingHorizontal: 16, 
+    marginBottom: 16 
+  },
+  inputIcon: { 
+    marginRight: 10 
+  },
+  textInput: { 
+    flex: 1, 
+    height: 55, 
+    fontSize: 18, 
+    fontWeight: '800', 
+    color: '#111827', 
+    letterSpacing: 2 
+  },
+
+  // --- BUTONLAR ---
+  joinBtnContainer: { 
+    height: 55, 
+    borderRadius: 16, 
+    shadowColor: '#FF69EB', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.3, 
+    shadowRadius: 8, 
+    elevation: 5 
+  },
+  joinBtnGradient: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderRadius: 16, 
+    gap: 10 
+  },
+  joinBtnText: { 
+    color: 'white', 
+    fontWeight: '800', 
+    fontSize: 15, 
+    letterSpacing: 1 
+  },
+
+  // --- İZİN EKRANI (PERMISSION) ---
+  permissionContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    backgroundColor: '#F3F4F6' 
+  },
+  permissionBg: { 
+    position: 'absolute', 
+    top: 0, 
+    width: '100%', 
+    height: '40%', 
+    borderBottomLeftRadius: 50, 
+    borderBottomRightRadius: 50 
+  },
+  permissionCard: { 
+    backgroundColor: '#FFF', 
+    width: '85%', 
+    padding: 30, 
+    borderRadius: 30, 
+    alignItems: 'center', 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 10 }, 
+    shadowOpacity: 0.1, 
+    shadowRadius: 20, 
+    elevation: 10 
+  },
+  permissionTitle: { 
+    fontSize: 20, 
+    fontWeight: '800', 
+    color: '#1F2937', 
+    marginBottom: 10 
+  },
+  permissionText: { 
+    fontSize: 14, 
+    color: '#6B7280', 
+    textAlign: 'center', 
+    marginBottom: 30, 
+    lineHeight: 22 
+  },
+  permissionBtn: { 
+    width: '100%', 
+    height: 55, 
+    borderRadius: 16, 
+    shadowColor: '#FF69EB', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.3, 
+    shadowRadius: 8, 
+    elevation: 5 
+  },
+  btnGradient: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderRadius: 16 
+  },
+  permissionBtnText: { 
+    color: 'white', 
+    fontWeight: '800', 
+    fontSize: 16, 
+    letterSpacing: 1 
+  }
 });

@@ -6,8 +6,6 @@ import { StackActions } from '@react-navigation/native';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { Image } from 'expo-image';
-
-// 🚀 YENİ: Ses ve Titreşim (expo-audio'ya güncellendi)
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 
@@ -18,21 +16,24 @@ const CARD_SIZE = (width - (GRID_PADDING * 2) - (CARD_MARGIN * 6)) / 3;
 
 const AVATAR_LIST = [
   'Oliver', 'Willow', 'Felix', 'Jack', 'Luna', 'Zoe', 'Milo', 'Ash', 'Ruby',
-  'Jasper', 'Sasha', 'Leo', 'Nala', 'Simba', 'Buster', 'Molly', 'Coco', 'Shadow'
+  'Jasper', 'Sasha', 'Leo', 'Nala', 'Simba', 'Buster', 'Molly', 'Coco', 'Shadow',
+  'Finn', 'Aria', 'Ezra', 'Nova', 'Oscar', 'Maya', 'Otis', 'Cleo', 'Arlo', 
+  'Hazel', 'Hugo', 'Ivy', 'Bear', 'Peanut', 'Gus', 'Zelda', 'Blue', 'Ziggy',
+  'Marlowe', 'Rocco', 'Xena', 'Kai', 'Juno', 'Pip', 'Toby', 'Lulu', 'Rex',
+  'Bella', 'Max', 'Charlie', 'Lucy', 'Cooper', 'Daisy', 'Rocky', 'Mia', 'Nolan',
+  'Penny', 'Quinn', 'Sam', 'Uma', 'Victor', 'Wendy', 'Xander', 'Yara', 'Zane',
+  'Apollo', 'Athena', 'Bandit', 'Boomer', 'Duke', 'Gigi', 'Gizmo', 'Harley', 
+  'Hunter', 'Kobe', 'Loki', 'Lucky', 'Mac', 'Moose', 'Ollie', 'Pepper', 'Piper', 
+  'Riley', 'Romeo', 'Rosie', 'Roxy', 'Sadie', 'Sammy', 'Scout', 'Sparky', 'Stella', 
+  'Tank', 'Teddy', 'Thor', 'Tilly', 'Tucker', 'Winston', 'Zeus'
 ];
-
 export default function AvatarScreen({ navigation, route }) {
   const [selected, setSelected] = useState('Oliver');
-  
-  // 🚀 SENIOR DOKUNUŞ: Seçili avatarın sürekli nefes alan (pulse) animasyonu
   const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  // 🚀 YENİ SES HOOK'LARI EKLENDİ (Sayfa açıldığında hafızaya yüklenir)
   const bubbleSound = useAudioPlayer(require('../../assets/sounds/bubble_pop.mp3'));
   const tapSound = useAudioPlayer(require('../../assets/sounds/ui_tap.mp3'));
 
   useEffect(() => {
-    // 🚀 SES AYARLARI GÜNCELLENDİ
     const setupAudio = async () => {
       try {
         await setAudioModeAsync({ playsInSilentMode: true });
@@ -41,20 +42,15 @@ export default function AvatarScreen({ navigation, route }) {
       }
     };
     setupAudio();
-
-    // Pulse Animasyonunu Başlat
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.05, duration: 1500, useNativeDriver: true }),
         Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true })
       ])
     ).start();
-    
-    // (Eski sistemdeki gibi ses unload yapmamıza gerek yok, hook bunu otomatik yönetir)
   }, []);
 
   const handleConfirm = async () => { 
-    // 🚀 AKSİYON: Onay sesi ve titreşimi
     try {
       tapSound.seekTo(0);
       tapSound.play();
@@ -96,7 +92,6 @@ export default function AvatarScreen({ navigation, route }) {
         style={[styles.card, isSelected && styles.selectedCard]} 
         onPress={() => {
           setSelected(item);
-          // 🚀 AKSİYON: Karakter seçildiğinde bubble pop sesi ve hafif titreşim
           try {
             bubbleSound.seekTo(0);
             bubbleSound.play();
@@ -104,7 +99,7 @@ export default function AvatarScreen({ navigation, route }) {
           
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }}
-        activeOpacity={0.8} // Daha tok bir basım hissi
+        activeOpacity={0.8} 
       >
        <Image 
           source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${item}&backgroundColor=ffffff` }} 
@@ -125,8 +120,6 @@ export default function AvatarScreen({ navigation, route }) {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      
-      {/* 🚀 SENIOR DOKUNUŞ: Arka plana hafif, oyunsu bir degradé (gradient) */}
       <LinearGradient colors={['#FAFAFA', '#F3F4F6']} style={StyleSheet.absoluteFillObject} />
       
       <View style={styles.minimalHeader}>
@@ -174,7 +167,6 @@ export default function AvatarScreen({ navigation, route }) {
             end={{ x: 1, y: 1 }}
             style={styles.buttonGradient}
           >
-            {/* Buton içine şık bir parlama efekti */}
             <View style={styles.buttonGloss} />
             <Text style={styles.buttonText}>MASAYA KATIL</Text>
           </LinearGradient>
@@ -183,9 +175,14 @@ export default function AvatarScreen({ navigation, route }) {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFF' },
+  // --- ANA KONTEYNER ---
+  container: { 
+    flex: 1, 
+    backgroundColor: '#FFF' 
+  },
+
+  // --- HEADER (ÜST KISIM) ---
   minimalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -206,8 +203,18 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2
   },
-  headerTitle: { fontSize: 20, fontWeight: '900', color: '#111827', letterSpacing: -0.5 },
-  showcase: { alignItems: 'center', paddingVertical: 25 },
+  headerTitle: { 
+    fontSize: 20, 
+    fontWeight: '900', 
+    color: '#111827', 
+    letterSpacing: -0.5 
+  },
+
+  // --- ÖNİZLEME ALANI (SHOWCASE) ---
+  showcase: { 
+    alignItems: 'center', 
+    paddingVertical: 25 
+  },
   previewRing: {
     width: 140,
     height: 140,
@@ -222,9 +229,22 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: 'rgba(255, 0, 214, 0.05)'
   },
-  previewImage: { width: 140, height: 140 },
-  instructionText: { marginTop: 20, fontSize: 15, fontWeight: '700', color: '#6B7280' },
-  listPadding: { paddingHorizontal: GRID_PADDING, paddingBottom: 140 },
+  previewImage: { 
+    width: 140, 
+    height: 140 
+  },
+  instructionText: { 
+    marginTop: 20, 
+    fontSize: 15, 
+    fontWeight: '700', 
+    color: '#6B7280' 
+  },
+
+  // --- LİSTE VE KARTLAR ---
+  listPadding: { 
+    paddingHorizontal: GRID_PADDING, 
+    paddingBottom: 140 
+  },
   card: {
     width: CARD_SIZE,
     height: CARD_SIZE,
@@ -248,7 +268,12 @@ const styles = StyleSheet.create({
     elevation: 6,
     transform: [{ translateY: -3 }]
   },
-  avatarImage: { width: '75%', height: '75%' },
+  avatarImage: { 
+    width: '75%', 
+    height: '75%' 
+  },
+
+  // --- AKTİF SEÇİM GÖSTERGESİ ---
   activeIndicatorWrapper: {
     position: 'absolute', 
     bottom: 8,
@@ -262,6 +287,8 @@ const styles = StyleSheet.create({
     borderRadius: 4, 
     backgroundColor: '#FF00D6' 
   },
+
+  // --- FOOTER VE BUTON ---
   footerContainer: {
     position: 'absolute',
     bottom: 0,
