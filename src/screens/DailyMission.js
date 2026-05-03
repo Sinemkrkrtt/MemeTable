@@ -63,65 +63,101 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
     }
   }, [isModalVisible]);
 
+// 🚀 DÜZELTİLDİ: Sadece bileşen yüklendiğinde 1 kere kontrol et.
   useEffect(() => {
     const checkDailyReset = async () => {
       const user = auth.currentUser;
       if (!user) return;
       
-      const userRef = doc(db, 'users', user.uid);
-      const snap = await getDoc(userRef);
-      
-      if (snap.exists()) {
-        const data = snap.data();
-        const today = new Date().toISOString().split('T')[0]; 
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        const snap = await getDoc(userRef);
+        
+        if (snap.exists()) {
+          const data = snap.data();
+          const today = new Date().toISOString().split('T')[0]; 
 
-        if (data.lastMissionDate !== today) {
-          await updateDoc(userRef, {
-            wonHearts: 0,
-            isBoxOpened: false,
-            lastMissionDate: today
-          });
-          setLocalHearts(0);
-          setIsBoxOpened(false);
-          if (onRefreshUser) onRefreshUser();
-        } else {
-          setLocalHearts(data.wonHearts || 0);
-          setIsBoxOpened(data.isBoxOpened || false);
+          if (data.lastMissionDate !== today) {
+            await updateDoc(userRef, {
+              wonHearts: 0,
+              isBoxOpened: false,
+              lastMissionDate: today
+            });
+            setLocalHearts(0);
+            setIsBoxOpened(false);
+            if (onRefreshUser) onRefreshUser();
+          } else {
+            // Eğer Firebase'deki veri, prop olarak gelenden güncelse state'i güncelle.
+            // (wonHearts prop olarak geliyorsa onu da kullanabilirsin, ama Firebase güvenlidir.)
+            setLocalHearts(data.wonHearts || 0); 
+            setIsBoxOpened(data.isBoxOpened || false);
+          }
         }
+      } catch (error) {
+        console.log("Günlük görev sıfırlama kontrolünde hata:", error.code);
       }
     };
     
     checkDailyReset();
-  }, [wonHearts]);
+  }, []); // 🚀 BOŞ ARRAY
+
+
+useEffect(() => {
+    let rotationAnimation;
+    if (isModalVisible) {
+      rotateAnim.setValue(0); // Animasyonu sıfırla
+      rotationAnimation = Animated.loop(Animated.timing(rotateAnim, { toValue: 1, duration: 12000, useNativeDriver: true }));
+      rotationAnimation.start();
+    } else {
+      rotateAnim.setValue(0); // Modal kapalıysa sıfırda bekle
+    }
+
+    return () => {
+       if (rotationAnimation) rotationAnimation.stop(); // 🚀 EKLENDİ: Memory leak'i önler
+    };
+  }, [isModalVisible]);
 
   useEffect(() => {
+    let pulseAnimation;
     if (localHearts >= 3 && !isBoxOpened) {
-      Animated.loop(
+      pulseAnimation = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.08, duration: 800, useNativeDriver: true }),
           Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
         ])
-      ).start();
+      );
+      pulseAnimation.start();
     } else {
       pulseAnim.setValue(1);
+    }
+    
+    return () => {
+      if (pulseAnimation) pulseAnimation.stop(); // 🚀 EKLENDİ
     }
   }, [localHearts, isBoxOpened]);
 
   const spin = rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   const handleInstantOpen = () => {
+    if (localHearts < 3 || isBoxOpened) return; // 🚀 EKLENDİ: Hile koruması
+
     playRevealSound();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     const randomReward = REWARDS[Math.floor(Math.random() * REWARDS.length)];
     setCurrentReward(randomReward);
     setIsModalVisible(true);
+    
+    // Animasyonları sıfırlayıp baştan başlat
+    rewardOpacity.setValue(0);
+    boxAnim.setValue(0);
+
     Animated.parallel([
       Animated.timing(rewardOpacity, { toValue: 1, duration: 800, useNativeDriver: true }),
       Animated.spring(boxAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true })
     ]).start();
   };
-
+  
   const handleClaimReward = async () => {
     if (isClaiming) return;
     setIsClaiming(true);
@@ -152,12 +188,18 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
           updateData[`diamonds`] = increment(10);
         }
 
-        await updateDoc(userRef, updateData);
+       await updateDoc(userRef, updateData);
         setIsBoxOpened(true);
         setLocalHearts(0);
         
         if (onRefreshUser) onRefreshUser();
-        setIsModalVisible(false);
+        
+        // 🚀 MODAL KAPANIRKEN ANİMASYONLARI DA DURDUR/SIFIRLA
+        Animated.timing(rewardOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
+             setIsModalVisible(false);
+             setIsClaiming(false);
+        });
+
       } catch (error) {
         console.error("Hediye işlenirken hata:", error);
       } finally {
@@ -174,7 +216,7 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
             <Ionicons name="sparkles" size={19} color="white" />
           </LinearGradient>
           <View>
-            <Text style={styles.missionMainTitle}>Günün Görevi</Text>
+            <Text style={styles.missionMainTitle}>Günlük Görev</Text>
             <Text style={styles.missionSubTitle}>
               {isBoxOpened 
                 ? "Günün görevi tamamlandı!" 
@@ -207,8 +249,8 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
           <View style={styles.giftWrapper}>
             {isBoxOpened ? (
               <View style={styles.lockedGift}>
-                <Ionicons name="checkmark-circle" size={32} color="#10B981" />
-                <Text style={[styles.lockedText, { color: '#10B981' }]}>YARIN GEL</Text>
+                <Ionicons name="checkmark-circle" size={32} color= '#FF7300'/>
+                <Text style={[styles.lockedText, { color: '#FF7300' }]}>YARIN GEL</Text>
               </View>
             ) : localHearts < 3 ? (
               <View style={styles.lockedGift}>

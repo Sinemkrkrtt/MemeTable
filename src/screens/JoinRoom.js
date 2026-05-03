@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react'; 
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Dimensions, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Dimensions, KeyboardAvoidingView, Platform, StatusBar,ScrollView } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebase';
+import { ref, get } from 'firebase/database';
+import { auth, database } from '../services/firebase'; // 🚀 db yerine database (Realtime DB) kullanıyoruz
 import { useIsFocused } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
@@ -45,12 +45,13 @@ export default function JoinRoom({ navigation, route }) {
   const [scanned, setScanned] = useState(false);
   const [manualCode, setManualCode] = useState('');
 
-  const handleJoinRoom = async (rawData) => {
+ const handleJoinRoom = async (rawData) => {
     if (!rawData || rawData.trim().length === 0 || scanned) return;
     
     setScanned(true); 
     let code = rawData.trim();
 
+    // Link üzerinden geliyorsa son kısmı al
     if (code.includes('://')) {
       const parts = code.split('/');
       code = parts[parts.length - 1]; 
@@ -58,29 +59,50 @@ export default function JoinRoom({ navigation, route }) {
 
     const cleanCode = code.toUpperCase().trim();
 
-    if (cleanCode.includes('.') || cleanCode.includes(':')) {
+    // 🚀 DÜZELTİLDİ: Sadece A-Z harfler ve 0-9 rakamlara izin ver (Örn: 5 veya 6 haneli oda kodu)
+    const roomCodeRegex = /^[A-Z0-9]{4,8}$/; // Oda kodun kaç haneliyse 4,8 arasını ona göre ayarlayabilirsin
+    if (!roomCodeRegex.test(cleanCode)) {
       playSound('error');
-      alert("Geçersiz QR! Lütfen sadece oyun içi oda kodunu okutun.");
+      alert("Geçersiz Kod! Lütfen geçerli bir oda kodu girin veya okutun.");
       setTimeout(() => setScanned(false), 2000); 
       return; 
     }
 
-    playSound('join');
+   try {
+      // 🚀 DÜZELTİLDİ: Firestore yerine Realtime Database'den oda kontrolü yapıyoruz!
+      const roomRef = ref(database, `rooms/${cleanCode}`); 
+      const roomSnap = await get(roomRef);
 
-    const params = route.params || {};
-    const selectedAvatar = params.userAvatar || params.myAvatarSeed || 'Oliver';
-    const currentUserName = params.myName || auth.currentUser?.displayName || 'Oyuncu';
+      if (!roomSnap.exists()) {
+        playSound('error');
+        alert("Oda bulunamadı veya kapanmış! Kodun doğruluğundan emin ol.");
+        setTimeout(() => setScanned(false), 2000);
+        return;
+      }
 
-    navigation.replace('LobbyScreen', { 
-      roomId: cleanCode, 
-      isHost: false,
-      myName: currentUserName, 
-      userAvatar: selectedAvatar,
-      myAvatarSeed: selectedAvatar
-    });
-    setTimeout(() => setScanned(false), 1500);
+      // Oda varsa işlemlere devam et
+      playSound('join');
+
+      const params = route.params || {};
+      const selectedAvatar = params.userAvatar || params.myAvatarSeed || 'Oliver';
+      const currentUserName = params.myName || auth.currentUser?.displayName || 'Oyuncu';
+
+      navigation.replace('LobbyScreen', { 
+        roomId: cleanCode, 
+        isHost: false,
+        myName: currentUserName, 
+        userAvatar: selectedAvatar,
+        myAvatarSeed: selectedAvatar
+      });
+      
+    } catch (error) {
+      console.log("Oda kontrol hatası:", error);
+      playSound('error');
+      alert("Bağlantı hatası oluştu, lütfen tekrar dene.");
+      setTimeout(() => setScanned(false), 2000);
+    }
   };
-
+   
   const handleBackPress = () => {
     playSound('click');
     navigation.goBack();
@@ -129,6 +151,13 @@ export default function JoinRoom({ navigation, route }) {
          <Text style={styles.headerTitle}>ODAYA KATIL</Text>
          <View style={{width: 40}} /> 
       </View>
+
+        {/* 🚀 EKLENDİ: ScrollView ile klavye açıldığında ekranın kayması sağlandı */}
+      <ScrollView 
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }} 
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled" // Klavye açıkken butona basılabilmesini sağlar
+      >
 
       <View style={styles.content}>
         
@@ -184,6 +213,7 @@ export default function JoinRoom({ navigation, route }) {
         </View>
 
       </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }

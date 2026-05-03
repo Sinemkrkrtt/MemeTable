@@ -11,10 +11,11 @@ import {
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   updateProfile,
-  sendPasswordResetEmail 
+  sendPasswordResetEmail,
+  deleteUser 
 } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { doc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 
 const { width, height } = Dimensions.get('window');
 
@@ -60,9 +61,10 @@ export default function AuthScreen() {
       return;
     }
     setLoading(true);
-    try {
+   try {
       await sendPasswordResetEmail(auth, cleanEmail);
       showAlert("Bağlantı Gönderildi", "Sıfırlama e-postası gönderildi. Lütfen kutunu kontrol et!");
+      setEmail(''); 
     } catch (error) {
       showAlert("Hata", "Sıfırlama e-postası gönderilemedi.");
     } finally {
@@ -72,27 +74,82 @@ export default function AuthScreen() {
 
   const handleAuth = async () => {
     const cleanEmail = email.trim();
-    if (!cleanEmail || !password || (!isLogin && !nickname)) {
+    const cleanNickname = nickname.trim();
+
+    if (!cleanEmail || !password || (!isLogin && !cleanNickname)) {
       showAlert("Eksik Bilgi", "Lütfen tüm alanları doldur.");
       return;
     }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      showAlert("Geçersiz E-posta", "Lütfen geçerli bir e-posta adresi yaz.");
+      return;
+    }
+
+    if (password.length < 6) {
+      showAlert("Zayıf Şifre", "Şifren en az 6 karakter uzunluğunda olmalıdır.");
+      return;
+    }
+
+    // 🚀 BURASI YENİ EKLENDİ: OYUN İÇİ NICKNAME GÜVENLİK DUVARI
+    if (!isLogin) {
+      // 3 ile 12 karakter sınırı (Oyun masası tasarımı taşmasın diye)
+      if (cleanNickname.length < 3 || cleanNickname.length > 12) {
+        showAlert("Geçersiz İsim", "Kullanıcı adın 3 ile 12 karakter arasında olmalıdır.");
+        return;
+      }
+      // Sadece harf, rakam ve Türkçe karakterlere izin ver (Özel sembol ve boşluk yasak)
+      const nicknameRegex = /^[a-zA-Z0-9ğüşıöçĞÜŞİÖÇ]+$/;
+      if (!nicknameRegex.test(cleanNickname)) {
+        showAlert("Geçersiz Karakter", "İsminde boşluk veya özel semboller (!, @, vs.) kullanamazsın.");
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, cleanEmail, password);
       } else {
+        // 🚀 1. ÖNCE NICKNAME KONTROLÜ (Hesap açmadan önce)
+        const usersRef = collection(db, "users");
+        const q = query(usersRef, where("nickname", "==", cleanNickname));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+          showAlert("Bu Koltuk Dolu!", "Bu nickname daha önce alınmış. Lütfen başka bir isim dene.");
+          setLoading(false);
+          return; // İsim doluysa işlemi durdur, hesap falan açma!
+        }
+
+        // 🚀 2. İSİM BOŞTAYSA HESABI AÇ VE KAYDET
         const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
         const user = userCredential.user;
-        await updateProfile(user, { displayName: nickname });
+        await updateProfile(user, { displayName: cleanNickname });
+        
         await setDoc(doc(db, "users", user.uid), {
-          uid: user.uid, nickname, email: cleanEmail, createdAt: new Date(),
+          uid: user.uid, 
+          nickname: cleanNickname, 
+          email: cleanEmail, 
+          createdAt: new Date(),
           coins: 100, diamonds: 10, joker_skip: 1, joker_double: 1, joker_freeze: 1,
           wonHearts: 0, isBoxOpened: false, level: 1, experience: 0
         });
       }
     } catch (error) {
-      let errorMsg = "E-posta veya şifre hatalı.";
-      if (error.code === 'auth/email-already-in-use') errorMsg = "Bu hesap zaten kayıtlı.";
+      console.log("Kimlik Doğrulama Hatası:", error); 
+      let errorMsg = isLogin ? "Giriş başarısız oldu." : "Kayıt işlemi gerçekleştirilemiyor.";
+
+      if (error.message && error.message.includes('permission-denied')) {
+        errorMsg = "Veritabanı güvenlik kuralları nickname kontrolünü engelliyor. (Adım 2'yi uygulayın!)";
+      } else if (error.code === 'auth/email-already-in-use') {
+        errorMsg = "Bu e-posta adresi zaten kullanımda.";
+      } else if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        errorMsg = "E-posta veya şifreniz hatalı.";
+      } else {
+        errorMsg = `Beklenmeyen bir hata oluştu: ${error.code || "Bilinmiyor"}`;
+      }
       showAlert("Hata", errorMsg);
     } finally {
       setLoading(false);
@@ -104,7 +161,11 @@ export default function AuthScreen() {
       <StatusBar barStyle="dark-content" />
       
       {/*CUSTOM ALERT MODAL */}
-      <Modal visible={alertVisible} transparent animationType="fade">
+      <Modal visible={alertVisible} 
+      transparent
+       animationType="fade"
+       onRequestClose={() => setAlertVisible(false)}
+       >
         <View style={styles.modalOverlay}>
           <View style={styles.alertContainer}>
             <LinearGradient colors={[theme.pink, theme.orange]} start={{x:0, y:0}} end={{x:1, y:1}} style={styles.alertHeaderIcon}>
@@ -141,13 +202,29 @@ export default function AuthScreen() {
                 {!isLogin && (
                   <View style={styles.inputWrapper}>
                     <Ionicons name="person-outline" size={20} color={theme.pink} />
-                    <TextInput style={styles.input} placeholder="Nickname" placeholderTextColor={theme.subText} value={nickname} onChangeText={setNickname} />
+                    <TextInput 
+                      style={styles.input} 
+                      placeholder="Nickname" 
+                      placeholderTextColor={theme.subText} 
+                      value={nickname} 
+                      onChangeText={setNickname} 
+                      autoCapitalize="none" // 🚀 Kullanıcı yazarken ilk harfi zorla büyütmesin
+                      autoCorrect={false}   // 🚀 Klavyenin kelime düzeltmesini engeller
+                    />
                   </View>
                 )}
 
                 <View style={styles.inputWrapper}>
                   <Ionicons name="mail-outline" size={20} color={theme.pink} />
-                  <TextInput style={styles.input} placeholder="E-posta" placeholderTextColor={theme.subText} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+                 <TextInput 
+                    style={styles.input} 
+                    placeholder="E-posta" 
+                    placeholderTextColor={theme.subText} 
+                    value={email} 
+                    onChangeText={(text) => setEmail(text.replace(/\s/g, ''))} // 🚀 Anında boşluk silme eklendi
+                    autoCapitalize="none" 
+                    keyboardType="email-address" 
+                  />
                 </View>
 
                 <View style={styles.inputWrapper}>

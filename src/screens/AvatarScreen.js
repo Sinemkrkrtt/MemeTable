@@ -29,6 +29,7 @@ const AVATAR_LIST = [
 ];
 export default function AvatarScreen({ navigation, route }) {
   const [selected, setSelected] = useState('Oliver');
+  const [isSaving, setIsSaving] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const bubbleSound = useAudioPlayer(require('../../assets/sounds/bubble_pop.mp3'));
   const tapSound = useAudioPlayer(require('../../assets/sounds/ui_tap.mp3'));
@@ -50,40 +51,53 @@ export default function AvatarScreen({ navigation, route }) {
     ).start();
   }, []);
 
-  const handleConfirm = async () => { 
+const handleConfirm = async () => { 
+  if (isSaving) return; // 🚀 EKLENDİ: Zaten kaydediliyorsa butona tekrar basılmasını engelle
+  setIsSaving(true); // Loading başlasın
+
+  try {
+    tapSound.seekTo(0);
+    tapSound.play();
+  } catch (e) { console.log(e); }
+  
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+  const { nextScreen, extraParams } = route.params || {};
+  const user = auth.currentUser;
+  
+  if (user) {
     try {
-      tapSound.seekTo(0);
-      tapSound.play();
-    } catch (e) { console.log(e); }
-    
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    const { nextScreen, extraParams } = route.params || {};
-    const user = auth.currentUser;
-    if (user) {
-      try {
-        const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, { avatarSeed: selected });
-      } catch (error) {
-        console.log("Avatar kaydedilemedi:", error);
-      }
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, { avatarSeed: selected });
+    } catch (error) {
+      console.log("Avatar kaydedilemedi:", error);
+      alert("Avatar kaydedilirken bir hata oluştu. İnternetini kontrol et.");
+      setIsSaving(false); 
+      return; // 🚀 EKLENDİ: Hata varsa aşağıya inip SAYFAYI DEĞİŞTİRME! İşlemi kes.
     }
-    
-    const currentName = extraParams?.myName || route.params?.myName || auth.currentUser?.displayName || 'Oyuncu';
+  }
+  
+  const currentName = extraParams?.myName || route.params?.myName || auth.currentUser?.displayName || 'Oyuncu';
 
-    if (nextScreen) {
-      navigation.dispatch(
-        StackActions.replace(nextScreen, {
-          ...extraParams,
-          userAvatar: selected, 
-          myAvatarSeed: selected, 
-          myName: currentName 
-        })
-      );
+  if (nextScreen) {
+    navigation.dispatch(
+      StackActions.replace(nextScreen, {
+        ...extraParams,
+        userAvatar: selected, 
+        myAvatarSeed: selected, 
+        myName: currentName 
+      })
+    );
+  } else {
+    // 🚀 DÜZELTİLDİ: Başka sayfa yoksa ve geri dönülebiliyorsa dön, yoksa Home'a git.
+    if (navigation.canGoBack()) {
+      navigation.goBack();
     } else {
       navigation.navigate('Home');
     }
-  };
+  }
+  // setIsSaving(false) yazmıyoruz çünkü zaten sayfa kapanıyor/değişiyor.
+};
 
   const renderItem = ({ item }) => {
     const isSelected = selected === item;
@@ -123,13 +137,17 @@ export default function AvatarScreen({ navigation, route }) {
       <LinearGradient colors={['#FAFAFA', '#F3F4F6']} style={StyleSheet.absoluteFillObject} />
       
       <View style={styles.minimalHeader}>
-        <TouchableOpacity 
-          style={styles.closeBtn} 
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            navigation.navigate('Home');
-          }}
-        >
+      <TouchableOpacity 
+              style={styles.closeBtn} 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                if (navigation.canGoBack()) {
+                  navigation.goBack(); // 🚀 DÜZELTİLDİ: Sadece bir önceki sayfaya döner
+                } else {
+                  navigation.navigate('Home'); // Eğer dönecek yer yoksa Home'a at
+                }
+              }}
+            >
           <Ionicons name="chevron-back" size={24} color='#FF69EB' />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Karakter Seçimi</Text>
@@ -150,28 +168,39 @@ export default function AvatarScreen({ navigation, route }) {
         <Text style={styles.instructionText}>Masadaki yeni tarzını belirle</Text>
       </View>
 
-      <FlatList
-        data={AVATAR_LIST}
-        renderItem={renderItem}
-        keyExtractor={(item) => item}
-        numColumns={3}
-        contentContainerStyle={styles.listPadding}
-        showsVerticalScrollIndicator={false}
-      />
+     <FlatList
+  data={AVATAR_LIST}
+  renderItem={renderItem}
+  keyExtractor={(item) => item}
+  numColumns={3}
+  contentContainerStyle={styles.listPadding}
+  showsVerticalScrollIndicator={false}
+  // 🚀 AŞAĞIDAKİLER PERFORMANS İÇİN EKLENDİ
+  initialNumToRender={12} // İlk açılışta sadece ekranda görünen kadarını yükle
+  maxToRenderPerBatch={6} // Kaydırıldıkça 6'şar 6'şar indir
+  windowSize={5} // Hafızada ne kadar görsel tutulacağını sınırlar
+  removeClippedSubviews={true} // Ekrandan çıkan görselleri bellekten düşürür
+/>
 
-      <View style={styles.footerContainer}>
-        <TouchableOpacity style={styles.premiumButton} onPress={handleConfirm} activeOpacity={0.9}>
-          <LinearGradient 
-            colors={['#FF69EB', '#FF00D6']} 
-            start={{ x: 0, y: 0 }} 
-            end={{ x: 1, y: 1 }}
-            style={styles.buttonGradient}
-          >
-            <View style={styles.buttonGloss} />
-            <Text style={styles.buttonText}>MASAYA KATIL</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
+<View style={styles.footerContainer}>
+  <TouchableOpacity 
+    style={styles.premiumButton} 
+    onPress={handleConfirm} 
+    activeOpacity={0.9}
+    disabled={isSaving} // 🚀 EKLENDİ: Kayıt sırasında butonu inaktif yap
+  >
+    <LinearGradient 
+      colors={['#FF69EB', '#FF00D6']} 
+      start={{ x: 0, y: 0 }} 
+      end={{ x: 1, y: 1 }}
+      style={styles.buttonGradient}
+    >
+      <View style={styles.buttonGloss} />
+      {/* 🚀 EKLENDİ: Kayıt sırasında yazıyı değiştir veya indicator koy */}
+      <Text style={styles.buttonText}>{isSaving ? 'MASAYA KATILIYOR...' : 'MASAYA KATIL'}</Text>
+    </LinearGradient>
+  </TouchableOpacity>
+  </View>
     </View>
   );
 }

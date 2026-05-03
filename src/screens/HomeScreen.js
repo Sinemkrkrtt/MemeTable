@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, TouchableOpacity, StatusBar, ScrollView, Dimensions, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -51,7 +52,7 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  useEffect(() => {
+useEffect(() => {
     const configureAudio = async () => {
         try {
             await setAudioModeAsync({ playsInSilentMode: true });
@@ -69,16 +70,23 @@ export default function HomeScreen({ navigation }) {
 
     if (user) {
       const userRef = doc(db, "users", user.uid);
-      unsubscribe = onSnapshot(userRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setNickname(data.nickname || "Oyuncu");
-          setWonHearts(data.wonHearts || 0);
-          setIsBoxOpened(data.isBoxOpened || false);
-          setCoins(data.coins || 0);
-          setDiamonds(data.diamonds || 0);
+      unsubscribe = onSnapshot(
+        userRef, 
+        (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setNickname(data.nickname || "Oyuncu");
+            setWonHearts(data.wonHearts || 0);
+            setIsBoxOpened(data.isBoxOpened || false);
+            setCoins(data.coins || 0);
+            setDiamonds(data.diamonds || 0);
+          }
+        },
+        // 🚀 İŞTE EKLENEN KISIM: Çıkış yaparken hatayı yutar ve kırmızı ekranı önler
+        (error) => {
+          console.log("Ana sayfa dinleyicisi kapandı (Çıkış yapıldı):", error.code);
         }
-      });
+      );
     }
 
     return () => {
@@ -141,13 +149,14 @@ export default function HomeScreen({ navigation }) {
               </View>
             </TouchableOpacity>
 
-           <TouchableOpacity 
-            style={styles.creativeLogout} 
-            onPress={() => {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-              signOut(auth);
-            }}
-          >
+          <TouchableOpacity 
+              style={styles.creativeLogout} 
+              onPress={() => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                signOut(auth).then(() => {
+                }).catch((error) => console.log(error));
+              }}
+            >
             <View style={styles.logoutIcon}>
               <Ionicons name="power" size={20} color={palet.peach} />
             </View>
@@ -221,10 +230,12 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-          <DailyMission 
+        <DailyMission 
             wonHearts={wonHearts} 
-            isBoxOpened={isBoxOpened} 
-          />
+            onRefreshUser={() => {
+            console.log("Kutu açıldı, veriler yenileniyor...");
+            }}
+/>
         </ScrollView>
       </SafeAreaView>
     </View>

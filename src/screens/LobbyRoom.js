@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, Animated, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar,Animated, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons } from '@expo/vector-icons';
-import { database } from '../services/firebase';
-import { ref, onValue } from 'firebase/database';
+import { database, auth } from '../services/firebase'; // 🚀 DÜZELTİLDİ: auth eklendi
+import { ref, onValue, remove, onDisconnect, update } from 'firebase/database'; // 🚀 DÜZELTİLDİ: update eklendi
 import { styles } from './RoomScreenStyles'; 
 
 const Snowflake = ({ delay, left, size }) => {
@@ -12,7 +12,7 @@ const Snowflake = ({ delay, left, size }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.loop(
+    const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(fadeAnim, { toValue: 1, duration: 400, delay: delay, useNativeDriver: true }),
         Animated.parallel([
@@ -21,10 +21,13 @@ const Snowflake = ({ delay, left, size }) => {
         ]),
         Animated.timing(fallAnim, { toValue: 0, duration: 0, useNativeDriver: true }) 
       ])
-    ).start();
+    );
+    animation.start();
+
+    return () => animation.stop(); // Memory Leak önlendi
   }, []);
 
-  const translateY = fallAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 80] });
+  const translateY = fallAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 120] }); // Yatay ekran için 80 yerine 120'ye uzattık
 
   return (
     <Animated.Text style={{
@@ -49,6 +52,18 @@ export default function LobbyRoom({ route, navigation }) {
   const logoSwapCard = require('../../assets/joker2.png');
   const logoTimeFreeze = require('../../assets/joker3.png');
 
+  const handleLeaveRoom = async () => {
+    // Kendi id'mizle odadan çıkıyoruz
+    const myPlayerRef = ref(database, `rooms/${roomId}/players/${auth.currentUser.uid}`);
+    try {
+      await remove(myPlayerRef); // Firebase'den sil
+    } catch (e) { console.log(e); }
+    
+    // 🚀 DÜZELTİLDİ: Yatay moddan dikey moda (Home) dönerken kilit açılır.
+    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    navigation.replace('Home'); 
+  };
+
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -64,6 +79,10 @@ export default function LobbyRoom({ route, navigation }) {
     };
     lockScreen();
 
+    // 🚀 EKLENDİ: Uygulama çökerse veya internet giderse beni odadan sil (Ghost Player Koruması)
+    const myPlayerRef = ref(database, `rooms/${roomId}/players/${auth.currentUser?.uid}`);
+    onDisconnect(myPlayerRef).remove(); 
+
     const roomRef = ref(database, `rooms/${roomId}`);
     const unsubscribe = onValue(roomRef, (snapshot) => {
       const data = snapshot.val();
@@ -77,16 +96,27 @@ export default function LobbyRoom({ route, navigation }) {
         }
         if (data.status === 'playing' && !hasNavigated.current) {
           hasNavigated.current = true;
+          // 🚀 DÜZELTİLDİ: Timeout kısaltıldı. Senkronizasyon bozulmasın.
           setTimeout(() => {
              navigation.replace('RoomScreen', { roomId, myAvatarSeed, myName });
-          }, 1200);
+          }, 300); 
         }
+      } else {
+         // 🚀 EKLENDİ: Eğer oda silinmişse (Host iptal ettiyse) herkesi lobiye şutla
+         if(!hasNavigated.current) {
+             alert("Oda kurucusu oyunu iptal etti veya bağlantısı koptu.");
+             handleLeaveRoom();
+         }
       }
     });
 
     Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
 
-    return () => unsubscribe();
+    return () => {
+       unsubscribe();
+       // 🚀 EKLENDİ: Sayfa değiştiğinde onDisconnect'i iptal et ki RoomScreen'de bizi oyundan atmasın.
+       onDisconnect(myPlayerRef).cancel();
+    }
   }, [roomId]);
 
   const PlayerSlot = ({ name, positionStyle, avatarAnimal, badgeColor, isPlayerReady, isHost }) => (
@@ -112,6 +142,13 @@ export default function LobbyRoom({ route, navigation }) {
     <View style={styles.container}>
       <StatusBar hidden />
       <View style={styles.whiteBackground} />
+
+      <TouchableOpacity 
+        style={{ position: 'absolute', top: 20, left: 20, zIndex: 99, padding: 10, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20 }}
+        onPress={handleLeaveRoom}
+      >
+        <Ionicons name="arrow-back" size={24} color="white" />
+      </TouchableOpacity>
 
       <View style={styles.hudWrapper}>
         <View style={[styles.hudContainer, { opacity: 0.5 }]}>
@@ -175,37 +212,97 @@ export default function LobbyRoom({ route, navigation }) {
         </View>
       </View>
 
-      {/* Alt Bilgi Barı - Premium Pill Tasarımı */}
+     {/* Alt Bilgi Barı - Premium Pill Tasarımı */}
       <View style={styles.bottomDeckWrapper}>
         <Animated.View style={{ transform: [{ scale: popAnim }, { scale: pulseAnim }] }}>
-          <LinearGradient 
-            colors={['rgba(255, 124, 42, 0.9)', 'rgba(247, 62, 216, 0.9)']} 
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={{ 
-              paddingHorizontal: 35, 
-              paddingVertical: 12, 
-              borderRadius: 30, 
-              flexDirection: 'row', 
-              alignItems: 'center',
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.4)',
-              shadowColor: '#FF69EB',
-              shadowOffset: { width: 0, height: 5 },
-              shadowOpacity: 0.4,
-              shadowRadius: 12,
-              elevation: 8
-            }}
-          >
-            {/* Yanıp sönen ufak bir gösterge ışığı */}
-            <View style={{ 
-              width: 8, height: 8, borderRadius: 4, 
-              backgroundColor: '#FFF', marginRight: 12,
-              shadowColor: '#FFF', shadowOpacity: 0.8, shadowRadius: 4
-            }} />
-            <Text style={{ color: 'white', fontWeight: '800', fontSize: 14, letterSpacing: 1 }}>
-              {players.length} OYUNCU HAZIRLANIYOR...
-            </Text>
-          </LinearGradient>
+          {/* 🚀 DÜZELTİLDİ: Eğer Host bensem ve yeterince oyuncu varsa BAŞLAT butonu olmalı */}
+          {players.find(p => p.id === auth.currentUser?.uid)?.isHost ? (
+            <TouchableOpacity 
+                activeOpacity={0.8}
+                onPress={() => {
+                   // Host "Başlat" butonuna bastığında status değişir, herkes RoomScreen'e gider
+                   if(players.length >= 2) { 
+                      // 🚀 DÜZELTİLDİ: Firestore kodu silindi, yerine Realtime DB update fonksiyonu yazıldı
+                      const roomRef = ref(database, `rooms/${roomId}`);
+                      update(roomRef, { status: 'playing' });
+                   } else {
+                      alert("Oyuna başlamak için en az 2 kişi olmalı.");
+                   }
+                }}
+             >
+                <LinearGradient 
+                  colors={['#FF00D6', '#FF86C8']} 
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={{ 
+                    paddingHorizontal: 40, paddingVertical: 14, borderRadius: 30, 
+                    flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderColor: '#FFF',
+                  }}
+                >
+                  <Text style={{ color: 'white', fontWeight: '900', fontSize: 16, letterSpacing: 2 }}>OYUNU BAŞLAT</Text>
+                </LinearGradient>
+             </TouchableOpacity>
+          ) : (
+            <LinearGradient 
+              colors={['rgba(255, 124, 42, 0.9)', 'rgba(247, 62, 216, 0.9)']} 
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={{ 
+                paddingHorizontal: 35, paddingVertical: 12, borderRadius: 30, flexDirection: 'row', alignItems: 'center',
+                borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+              }}
+            >
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFF', marginRight: 12 }} />
+            <LinearGradient 
+              colors={['rgba(255, 255, 255, 0.05)', 'rgba(255, 255, 255, 0.15)']} 
+              style={{ 
+                paddingHorizontal: 35, 
+                paddingVertical: 12, 
+                borderRadius: 30, 
+                flexDirection: 'row', 
+                alignItems: 'center',
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.2)',
+                minWidth: 280, // Genişliği sabitleyerek titremeyi önler
+                justifyContent: 'center'
+              }}
+            >
+              {/* 🚀 CANLI NOKTA: Yanıp sönen (pulse) animasyonlu nokta */}
+              <Animated.View style={{ 
+                width: 10, 
+                height: 10, 
+                borderRadius: 5, 
+                backgroundColor: '#FF6F00', // Sarı/Altın rengi dikkati çeker
+                marginRight: 15,
+                opacity: pulseAnim, // Zaten tanımlı olan pulseAnim'i kullanıyoruz
+                shadowColor: '#FF5709',
+                shadowOpacity: 0.8,
+                shadowRadius: 6,
+                elevation: 5
+              }} />
+
+              <View style={{ flexDirection: 'column' }}>
+                <Text style={{ 
+                  color:  '#FFBF81', 
+                  fontWeight: '900', 
+                  fontSize: 13, 
+                  letterSpacing: 1.5,
+                  textShadowColor: 'rgba(0,0,0,0.3)',
+                  textShadowRadius: 4
+                }}>
+                  HOST BEKLENİYOR
+                </Text>
+                <Text style={{ 
+                  color: '#FFBF81', 
+                  fontSize: 10, 
+                  fontWeight: '700',
+                  textAlign: 'center',
+                  marginTop: 2
+                }}>
+                  OYUN BİRAZDAN BAŞLAYACAK
+                </Text>
+              </View>
+            </LinearGradient>
+            </LinearGradient>
+          )}
         </Animated.View>
       </View>
     </View>

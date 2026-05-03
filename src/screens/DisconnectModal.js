@@ -1,37 +1,47 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Dimensions, Animated } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, Animated, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
-const { width, height } = Dimensions.get('window');
-const isPortrait = height > width;
-const modalWidth = isPortrait ? '85%' : '50%'; 
 
 const DisconnectModal = ({ visible, onQuit }) => {
-const gradientColors = ['#FF45E6','#FF69EB', '#FF9A6A', '#FA7D43']; 
+  const gradientColors = ['#FF45E6','#FF69EB', '#FF9A6A', '#FA7D43']; 
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  // 🚀 DÜZELTİLDİ: Cihaz her döndüğünde anlık olarak ekran boyutunu yakalar
+  const { width, height } = useWindowDimensions();
+  const isPortrait = height > width;
+  const currentModalWidth = isPortrait ? '85%' : '50%'; 
 
-const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    let animationLoop; // 🚀 Animasyonu hafızada tutmak için değişken
 
-useEffect(() => {
     if (visible) {
-     Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 0.6,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        })
-      ])
-    ).start();
+      animationLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.6,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          })
+        ])
+      );
+      animationLoop.start();
     } else {
       pulseAnim.setValue(1); 
     }
+
+    // 🚀 DÜZELTİLDİ: Modal kapandığında animasyonu durdur ve hafızayı temizle
+    return () => {
+      if (animationLoop) {
+        animationLoop.stop();
+      }
+    };
   }, [visible, pulseAnim]);
 
   return (
@@ -40,17 +50,21 @@ useEffect(() => {
       visible={visible} 
       animationType="fade"
       supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']} 
+      // 🚀 DÜZELTİLDİ: Android geri tuşu ile bug'a girip masaya dönülmesini engeller
+      onRequestClose={() => {
+        // Geri tuşuna basıldığında istersen onQuit() çağırabilir, istersen hiçbir şey yapmayabilirsin. 
+        // Bağlantı koptuğu için hiçbir şey yapmayıp (boş bırakıp) ekranda tutmak en güvenlisidir.
+      }}
     >
       <View style={styles.overlay}>
-        <View style={styles.glassContainer}>
+        {/* 🚀 DÜZELTİLDİ: Dinamik genişliği inline style olarak veriyoruz */}
+        <View style={[styles.glassContainer, { width: currentModalWidth }]}>
           <View style={styles.modalContent}>
             
-            {/* 🚀 SAĞA ÇARPI BUTONU (QUIT) */}
             <TouchableOpacity style={styles.closeButton} onPress={onQuit} activeOpacity={0.7}>
               <Ionicons name="close" size={26} color="#CCCCCC" />
             </TouchableOpacity>
 
-            {/* İkonun Yarısı Dışarıda Kalan Şık Tasarım (Pembe-Turuncu) */}
             <LinearGradient
               colors={gradientColors}
               start={{ x: 0, y: 0 }}
@@ -60,7 +74,6 @@ useEffect(() => {
               <Ionicons name="cloud-offline-outline" size={40} color="white" style={styles.iconShadow} />
             </LinearGradient>
             
-            {/* Yazı Alanı */}
             <View style={styles.textStack}>
               <Text style={styles.title}>Bağlantı Kesildi!</Text>
               <Text style={styles.desc}>
@@ -68,7 +81,6 @@ useEffect(() => {
               </Text>
             </View>
 
-            {/* Durum Alanı (Animasyonlu) */}
             <View style={styles.statusBox}>
               <Animated.View 
                 style={[
@@ -97,7 +109,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 glassContainer: {
-    width: modalWidth,
     backgroundColor: 'white',
     borderRadius: 35,
     padding: 3,

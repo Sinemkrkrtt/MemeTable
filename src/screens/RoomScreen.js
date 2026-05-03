@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated,ScrollView,useWindowDimensions, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, ScrollView, useWindowDimensions, ActivityIndicator, BackHandler } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons, Entypo } from '@expo/vector-icons';
@@ -56,6 +56,18 @@ const Snowflake = ({ delay, left, size }) => {
       opacity: fadeAnim, transform: [{ translateY }], textShadowColor: '#00E5FF', textShadowRadius: 8
     }}>❄️</Animated.Text>
   );
+};
+
+const safePause = (player) => {
+  try {
+    // Obje var mı ve gerçekten durdurulabilir bir fonksiyonu var mı kontrol et
+    if (player && typeof player.pause === 'function') {
+      player.pause();
+    }
+  } catch (error) {
+    // Hata oluşursa (obje bulunamazsa) sessizce yut, uygulamanın çökmesini önle
+    console.log("Ses durdurma hatası (Güvenli şekilde yutuldu):", error.message);
+  }
 };
 
 export default function RoomScreen({ navigation, route }) {
@@ -128,6 +140,28 @@ export default function RoomScreen({ navigation, route }) {
     setupAudio();
   }, []);
 
+  // 🚀 EKLENDİ: Fiziksel Geri Tuşunu Yakalama ve Sesleri Temizleme
+  useEffect(() => {
+    const handleBackPress = () => {
+      playSound('click');
+      if (me?.id) {
+        remove(ref(database, `rooms/${roomId}/players/${me.id}`));
+      }
+      navigation.replace('Home');
+      return true; // Varsayılan geri gitme davranışını ez
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+
+    return () => {
+      backHandler.remove();
+      // Çıkarken seslerin arkada çalmaya devam etmesini (veya patlamasını) engelle
+    // 🚀 DÜZELTİLDİ: Direkt .pause() çağırmak yerine safePause kullanıyoruz
+    safePause(tickPlayer);
+    safePause(playTickPlayer);
+  };
+}, [roomId, me?.id]);
+
   const playSound = (soundType) => {
     if (isMuted) return;
     try {
@@ -144,15 +178,16 @@ export default function RoomScreen({ navigation, route }) {
     }
   };
 
-  const toggleSound = () => {
-    const newMutedState = !isMuted;
-    setIsMuted(newMutedState);
-    
-    if (newMutedState) {
-      tickPlayer.pause(); 
-      playTickPlayer.pause();
-    }
-  };
+ const toggleSound = () => {
+  const newMutedState = !isMuted;
+  setIsMuted(newMutedState);
+  
+  if (newMutedState) {
+    // 🚀 DÜZELTİLDİ
+    safePause(tickPlayer); 
+    safePause(playTickPlayer);
+  }
+};
 
   useEffect(() => {
     if (amIHost && currentPrompt === "Durum bekleniyor..." && situationPrompts.length > 0 && roomId) {
@@ -260,20 +295,29 @@ export default function RoomScreen({ navigation, route }) {
       });
 
       const roomRef = ref(database, `rooms/${roomId}`);
-      const unsubscribeRoom = onValue(roomRef, (snapshot) => {
+
+    const unsubscribeRoom = onValue(roomRef, (snapshot) => {
         const roomData = snapshot.val();
         if (roomData) {
           setIsTimeFrozen(roomData.isGlobalFrozen || false);
-          if (roomData.round && roomData.round > currentRoundRef.current) {
-            currentRoundRef.current = roomData.round;
-            startNextRound(); 
+          
+          // 🚀 DÜZELTİLDİ: Tur değişikliği kontrolü daha sıkı hale getirildi
+          const newRound = roomData.round;
+          if (newRound && newRound > currentRoundRef.current) {
+            // Sadece gerçekten yeni bir tur geldiyse tetikle!
+            const isRoundProcessed = currentRoundRef.current === newRound;
+            if (!isRoundProcessed) {
+               currentRoundRef.current = newRound;
+               startNextRound(); 
+            }
           }
-         if (roomData.currentPrompt) {
+          
+          if (roomData.currentPrompt) {
               setCurrentPrompt(roomData.currentPrompt);
               if (!usedPromptsRef.current.includes(roomData.currentPrompt)) {
                 usedPromptsRef.current.push(roomData.currentPrompt);
               }
-            }
+          }
         }
       });
       Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
@@ -291,7 +335,7 @@ export default function RoomScreen({ navigation, route }) {
 
   useEffect(() => {
     let timer;
-    const totalPhaseTime = phase === 'READING' ? 5 : (phase === 'PLAYING' ? 7 : 10);
+    const totalPhaseTime = phase === 'READING' ? 10 : (phase === 'PLAYING' ? 5 : 10);
     
     Animated.timing(timeLeftAnim, {
       toValue: timeLeft / totalPhaseTime,
@@ -438,6 +482,39 @@ export default function RoomScreen({ navigation, route }) {
       unsubscribeBlur();
     };
   }, [navigation]);
+
+ useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const userRef = doc(db, 'users', user.uid);
+
+    const unsubscribe = onSnapshot(
+      userRef, 
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          
+          setJokerInventory({
+            joker_skip: data.joker_skip || 0,
+            joker_double: data.joker_double || 0,
+            joker_freeze: data.joker_freeze || 0,
+          });
+
+          setUserStats({
+            coins: data.coins || 0,
+            diamonds: data.diamonds || 0,
+          });
+        }
+      },
+      (error) => {
+        console.log("Dinleyici yetkisi düştü (Çıkış yapıldı):", error.code);
+      }
+    );
+
+    return () => unsubscribe(); 
+  }, []);
+
 
   const handleUseJoker = async (jokerId) => {
     if (jokerId === 'joker_skip' && !selectedCard) {
@@ -769,77 +846,61 @@ export default function RoomScreen({ navigation, route }) {
 
   const opponentPositions = [styles.topPlayer, styles.leftPlayer, styles.rightPlayer];
   const opponentColors = ["#E5E7EB", "#E5E7EB", "#E5E7EB"];
-
-  if (!isRoomReady || officialMemes.length === 0 || situationPrompts.length === 0) {
+if (!isRoomReady || officialMemes.length === 0 || situationPrompts.length === 0) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA' }]}>
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <StatusBar hidden />
         
-        {/*  Arka Plan Süslemeleri (Hafif ve Premium) */}
-        <View style={{ position: 'absolute', top: '15%', right: '10%', opacity: 0.05 }}>
-           <Ionicons name="sparkles" size={100} color="#FF00D6" />
-        </View>
-        <View style={{ position: 'absolute', bottom: '15%', left: '10%', opacity: 0.05 }}>
-           <Ionicons name="layers" size={120} color="#FF8A00" />
-        </View>
+        {/* Arka Plan Premium Işık Hüzmeleri (Ambient Glow) */}
+        <View style={styles.ambientGlowTop} />
+        <View style={styles.ambientGlowBottom} />
 
-        {/*  Merkez Animasyonlu Şık Kutu (Hafif Eğik 3D Hissi) */}
-        <View style={{
-          width: 110, height: 110, borderRadius: 32, backgroundColor: '#FFF',
-          justifyContent: 'center', alignItems: 'center', marginBottom: 35,
-          shadowColor: '#FF00D6', shadowOffset: { width: 0, height: 12 }, 
-          shadowOpacity: 0.25, shadowRadius: 25, elevation: 15,
-          borderWidth: 1.5, borderColor: 'rgba(255, 0, 214, 0.15)',
-          transform: [{ rotate: '-8deg' }] // Hafif eğik, dinamik görünüm
-        }}>
-           <LinearGradient 
-              colors={['rgba(255, 0, 214, 0.08)', 'rgba(255, 138, 0, 0.08)']} 
-              style={[StyleSheet.absoluteFillObject, { borderRadius: 32 }]} 
-           />
-          {/* İç ikon zıt yöne eğik ki düz dursun */}
-          <Ionicons name="layers" size={50} color="#FF00D6" style={{ transform: [{ rotate: '8deg' }] }} />
-        </View>
+        {/* Cam Efektli (Glassmorphism) Merkez Yükleme Kapsülü */}
+        <View style={styles.premiumLoadingIsland}>
+          
+          {/* Üstten Taşan 3D Kart Destesi Efekti */}
+          <View style={styles.floatingDeckContainer}>
+            <View style={[styles.decoCard, styles.decoCardLeft]} />
+            <View style={[styles.decoCard, styles.decoCardRight]} />
+            <View style={[styles.decoCard, styles.decoCardCenter]}>
+              <ActivityIndicator size="large" color="#FF69EB" />
+            </View>
+          </View>
 
-        <ActivityIndicator size="large" color="#FF8A00" />
-        
-        <Text style={{ 
-          color: '#1F2937', fontSize: 18, fontWeight: '900', marginTop: 28, 
-          letterSpacing: 4, textTransform: 'uppercase'
-        }}>
-          Masa Kuruluyor
-        </Text>
-        <Text style={{
-          color: '#9CA3AF', fontSize: 12, fontWeight: '800', marginTop: 8,
-          letterSpacing: 1.5
-        }}>
-          KARTLAR DAĞITILIYOR...
-        </Text>
+          {/* Başlık */}
+          <Text style={styles.loadingTitlePro}>MASA KURULUYOR</Text>
+          
+          {/* Alt Bilgi Hapı (Pill) */}
+          <View style={styles.loadingPillPro}>
+            <Ionicons name="sparkles" size={14} color="#FF8A00" style={{ marginRight: 6 }} />
+            <Text style={styles.loadingSubtitlePro}>KARTLAR DAĞITILIYOR...</Text>
+          </View>
+
+        </View>
       </View>
     );
   }
-
   return (
       <View style={styles.container}>
         <StatusBar hidden />
         <View style={styles.whiteBackground} />
-        <JokerModal 
-          visible={isFullInventoryVisible} 
-          onClose={() => setIsFullInventoryVisible(false)} 
-          onUseJoker={(id) => {
-            handleUseJoker(id);
-            setIsFullInventoryVisible(false); 
-          }}
-          inventory={jokerInventory}
-          selectedCard={selectedCard}
-        />
-
-        {isJokerMenuVisible && (
-          <TouchableOpacity 
-            activeOpacity={1}
-            style={[StyleSheet.absoluteFillObject, { zIndex: 998 }]}
-            onPress={() => setIsJokerMenuVisible(false)}
+         <JokerModal 
+            visible={isFullInventoryVisible} 
+            onClose={() => setIsFullInventoryVisible(false)} 
+            onUseJoker={(id) => {
+              handleUseJoker(id);
+            }}
+            selectedCard={selectedCard}
+            // isMarketMode yazmıyoruz! Yazmadığımız için otomatik olarak Oyun İçi (Kullanım) modunda çalışır.
           />
-        )}
+
+          {isJokerMenuVisible && (
+            <TouchableOpacity 
+              activeOpacity={1}
+              style={[StyleSheet.absoluteFillObject, { zIndex: 998 }]}
+              onPress={() => setIsJokerMenuVisible(false)}
+            />
+          )}
 
             <View style={[
               styles.topBarContainer, 
@@ -958,7 +1019,7 @@ export default function RoomScreen({ navigation, route }) {
         </View>
         
         <Animated.View pointerEvents="none" style={[styles.announcementBanner, { transform: [{ translateX: announcementAnim.interpolate({ inputRange: [0, 1], outputRange: [-width, 0] }) }] }]}>
-          <LinearGradient colors={['transparent', roundEnded ? '#FF4D00' : '#FF00D6', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.bannerGradient}>
+          <LinearGradient colors={['transparent', roundEnded ? '#FF8000' : '#FF4EE7', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.bannerGradient}>
             <Text 
               style={[styles.announcementText, roundEnded && styles.announcementTextWinner]}
               numberOfLines={1}
@@ -1022,7 +1083,7 @@ export default function RoomScreen({ navigation, route }) {
                       <ScrollView 
                         contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingVertical: 10 }}
                         showsVerticalScrollIndicator={true}
-                        persistentScrollbar={true} // Android'de kaydırma çubuğu net görünür
+                        persistentScrollbar={true} 
                         indicatorStyle="white" 
                       >
                         <Text 
@@ -1100,7 +1161,7 @@ export default function RoomScreen({ navigation, route }) {
                           )}
                           {isVoted && (
                             <View style={styles.votedBadge}>
-                              <Ionicons name="heart" size={20} color="#FF00D6" />
+                              <Ionicons name="heart" size={20} color="#FF07DE" />
                             </View>
                           )}
                         </TouchableOpacity>
@@ -1162,7 +1223,7 @@ export default function RoomScreen({ navigation, route }) {
                     {isSelected && <View style={styles.selectedBorder} />}
                     {isSelected && (
                       <TouchableOpacity style={styles.playButton} onPress={() => handlePlayCard()} activeOpacity={0.8}>
-                        <LinearGradient colors={['#FFA167', '#F73ED8']} style={styles.playButtonGradient}>
+                        <LinearGradient colors={['#FFBF81', '#FFA3A5', '#FF69EB','#FF00D6']} style={styles.playButtonGradient}>
                           <Text style={styles.playButtonText}>AT</Text>
                         </LinearGradient>
                       </TouchableOpacity>
@@ -1174,11 +1235,16 @@ export default function RoomScreen({ navigation, route }) {
           )}
         </View>
 
-        {roundEnded && myHand.length === 0 && (
+       {roundEnded && myHand.length === 0 && (
           <ScoreScreen 
             scores={scores} 
-            navigation={navigation} 
-            onNewGame={amIHost ? handleHostNewRound : () => {}} 
+            amIHost={amIHost} // Kimin Host olduğunu bilmesi gerek
+            onQuit={() => {
+              // Oyuncu çarpıya basarsa güvenli şekilde Firebase'den çıkıp anasayfaya gitsin
+              if (me?.id) remove(ref(database, `rooms/${roomId}/players/${me.id}`));
+              navigation.replace('Home');
+            }} 
+            onNewGame={handleHostNewRound} 
           />
         )}
         

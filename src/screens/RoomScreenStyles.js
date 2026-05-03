@@ -323,7 +323,7 @@ export const styles = StyleSheet.create({
   votingAreaPro: { 
     alignItems: 'center', 
     justifyContent: 'center', 
-    width: '100%', 
+    width: '90%', 
     paddingTop: 40 
   },
   proProgressBarContainer: { 
@@ -444,7 +444,7 @@ export const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject, 
     borderRadius: 14, 
     borderWidth: 4, 
-    borderColor: '#FF00D6' 
+    borderColor:'#FF00D6',
   },
   playButton: { 
     position: 'absolute', 
@@ -565,5 +565,110 @@ export const styles = StyleSheet.create({
     fontSize: 9, 
     fontWeight: '900' 
   },
+
+  // --- YÜKLEME EKRANI (LOADING SCREEN) STİLLERİ ---
+  ambientGlowTop: {
+    position: 'absolute', 
+    top: -100, 
+    right: -50, 
+    width: 300, 
+    height: 300,
+    borderRadius: 150, 
+    backgroundColor: '#FF00D6', 
+    opacity: 0.08, 
+  },
+  ambientGlowBottom: {
+    position: 'absolute', 
+    bottom: -100, 
+    left: -50, 
+    width: 300, 
+    height: 300,
+    borderRadius: 150, 
+    backgroundColor: '#FF8A00', 
+    opacity: 0.08,
+  },
+  premiumLoadingIsland: {
+    width: 280, 
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 32, 
+    paddingHorizontal: 20, 
+    paddingTop: 60, 
+    paddingBottom: 30,
+    alignItems: 'center', 
+    borderWidth: 1.5, 
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+    shadowColor: '#FF69EB', 
+    shadowOffset: { width: 0, height: 15 }, 
+    shadowOpacity: 0.25, 
+    shadowRadius: 30, 
+    elevation: 20,
+    marginTop: 20,
+  },
+  floatingDeckContainer: {
+    position: 'absolute', 
+    top: -45, // Kapsülün yarısı dışarıda
+    alignItems: 'center', 
+    justifyContent: 'center',
+    width: '100%',
+  },
+  decoCard: {
+    position: 'absolute', 
+    width: 60, 
+    height: 80, 
+    borderRadius: 12,
+    backgroundColor: '#FFF', 
+    borderWidth: 2, 
+    borderColor: 'rgba(255, 0, 214, 0.1)',
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 5 }, 
+    shadowOpacity: 0.1, 
+    shadowRadius: 10, 
+    elevation: 5,
+  },
+  decoCardLeft: { 
+    transform: [{ rotate: '-18deg' }, { translateX: -25 }, { translateY: 15 }], 
+    backgroundColor: '#FFF0F9' 
+  },
+  decoCardRight: { 
+    transform: [{ rotate: '18deg' }, { translateX: 25 }, { translateY: 15 }], 
+    backgroundColor: '#FFF5EB' 
+  },
+  decoCardCenter: { 
+    transform: [{ rotate: '0deg' }, { translateY: -5 }], 
+    zIndex: 10, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    borderWidth: 3, 
+    borderColor: '#FFF', 
+    shadowColor: '#FF00D6', 
+    shadowOpacity: 0.3, 
+    shadowRadius: 15, 
+    elevation: 12,
+    backgroundColor: '#FFF',
+  },
+  loadingTitlePro: { 
+    fontFamily: 'Nunito_900Black', 
+    fontSize: 20, 
+    color: '#1F1724', 
+    letterSpacing: 2, 
+    marginBottom: 12, 
+    textAlign: 'center' 
+  },
+  loadingPillPro: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: 'rgba(255, 138, 0, 0.1)', 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    borderRadius: 20 
+  },
+  loadingSubtitlePro: { 
+    fontFamily: 'Nunito_800ExtraBold', 
+    fontSize: 11, 
+    color: '#FF8A00', 
+    letterSpacing: 1 
+  },
+
+  
 
 });

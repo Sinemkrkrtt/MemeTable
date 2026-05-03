@@ -9,7 +9,7 @@ import { Image } from 'expo-image';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { database, auth } from '../services/firebase';
-import { ref as dbRef, set, onValue, update, remove } from 'firebase/database';
+import { ref as dbRef, set, onValue, update, remove, onDisconnect } from 'firebase/database';
 
 const { width } = Dimensions.get('window');
 const MAX_PLAYERS = 4;
@@ -60,34 +60,42 @@ export default function LobbyScreen({ route, navigation }) {
   const [players, setPlayers] = useState([]);
   const [isReady, setIsReady] = useState(isHost);
   
-  const [userId] = useState("USER_" + Math.random().toString(36).substring(7));
+  const userId = auth.currentUser?.uid;
   const hasNavigated = useRef(false);
   
   const prevPlayerCount = useRef(0);
 
-  useEffect(() => {
+ useEffect(() => {
     let currentRoomId = initialRoomId;
     
+    // 1. ODA KURULUMU (Eğer Host isek)
     if (isHost && !currentRoomId) {
-      currentRoomId = Math.random().toString(36).substring(7).toUpperCase();
+      currentRoomId = Math.random().toString(36).substring(2, 8).toUpperCase(); // 6 haneli kod
       setRoomId(currentRoomId);
       
-      set(dbRef(database, `rooms/${currentRoomId}`), {
+      const roomReference = dbRef(database, `rooms/${currentRoomId}`);
+      set(roomReference, {
         status: 'waiting',
         hostId: userId,
         createdAt: Date.now()
       });
+      // 🚀 EKLENDİ: Host'un interneti koparsa ODA SİLİNSİN
+      onDisconnect(roomReference).remove(); 
     }
 
+    // 2. OYUNCU KATILIMI
     if (currentRoomId) {
       const myPlayerRef = dbRef(database, `rooms/${currentRoomId}/players/${userId}`);
       set(myPlayerRef, {
         name: myName,
         avatar: myAvatarSeed,
-        isReady: isHost,
+        isReady: isHost, // Host her zaman baştan hazırdır
         isHost: isHost
       });
+      // 🚀 EKLENDİ: Misafirin interneti koparsa LOBİDEN SİLİNSİN
+      onDisconnect(myPlayerRef).remove();
 
+      // 3. ODAYI DİNLE
       const roomRef = dbRef(database, `rooms/${currentRoomId}`);
       const unsubscribe = onValue(roomRef, (snapshot) => {
         const data = snapshot.val();
@@ -98,14 +106,15 @@ export default function LobbyScreen({ route, navigation }) {
               id: key,
               ...data.players[key]
             }));
+            
             if (playersArray.length > prevPlayerCount.current && prevPlayerCount.current > 0) {
               playSound('join');
             }
             prevPlayerCount.current = playersArray.length;
-
             setPlayers(playersArray);
           }
 
+          // Oyun Başladıysa Masaya Geç
           if (data.status === 'playing' && !hasNavigated.current) {
             hasNavigated.current = true; 
             navigation.dispatch(
@@ -116,20 +125,22 @@ export default function LobbyScreen({ route, navigation }) {
               })
             );
           }
-        } else if (!hasNavigated.current) {
-          Alert.alert("Oda Kapandı", "Oda kurucusu lobiden ayrıldı.");
-          navigation.navigate('Home');
+        } else {
+          // 🚀 DÜZELTİLDİ: Oda artık yoksa (Host sildiyse veya koptuysa) herkes ana menüye döner
+          if (!hasNavigated.current && !isHost) {
+            Alert.alert("Oda Kapandı", "Oda kurucusu lobiden ayrıldı veya bağlantısı koptu.");
+            navigation.navigate('Home');
+          }
         }
       });
 
+      // CLEANUP: Sadece dinleyiciyi kapat. Manuel silme işlemini 'handleBackPress' yapacak.
       return () => {
         unsubscribe(); 
-        if (!hasNavigated.current && currentRoomId) {
-          if (isHost) {
-            remove(dbRef(database, `rooms/${currentRoomId}`));
-          } else {
-            remove(dbRef(database, `rooms/${currentRoomId}/players/${userId}`));
-          }
+        // 🚀 EKLENDİ: Eğer oyuna başarıyla geçildiyse onDisconnect işlemini iptal et ki masadan düşmeyelim!
+        if (hasNavigated.current) {
+          if(isHost) onDisconnect(dbRef(database, `rooms/${currentRoomId}`)).cancel();
+          onDisconnect(myPlayerRef).cancel();
         }
       };
     }
@@ -186,8 +197,17 @@ export default function LobbyScreen({ route, navigation }) {
     Alert.alert("Kopyalandı!", "Oda kodu panoya kopyalandı. 📋");
   };
 
-  const handleBackPress = () => {
+const handleBackPress = () => {
     playSound('click');
+    if (roomId && !hasNavigated.current) {
+      if (isHost) {
+         // Host çıkarsa bütün odayı sil
+         remove(dbRef(database, `rooms/${roomId}`));
+      } else {
+         // Guest çıkarsa sadece kendini sil
+         remove(dbRef(database, `rooms/${roomId}/players/${userId}`));
+      }
+    }
     navigation.goBack();
   };
 

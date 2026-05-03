@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, useWindowDimensions, Easing, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, useWindowDimensions, Easing, BackHandler, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { Ionicons } from '@expo/vector-icons';
-import { styles as roomStyles } from './RoomScreenStyles'; 
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { ref, onValue, update, onDisconnect, remove } from 'firebase/database'; 
 import { db, auth, database } from '../services/firebase';
 import * as Haptics from 'expo-haptics';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { Image } from 'expo-image';
+import { styles as roomStyles } from './RoomScreenStyles';
 
 const BOT_NAMES = [
   // Gerçekçi Türk İsimleri & Nickler
@@ -89,16 +89,23 @@ export default function RandomMatchScreen({ navigation, route }) {
     }
   };
 
-  useEffect(() => {
+ useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-    // ...
     const user = auth.currentUser;
     let unsubscribeUser = () => {};
+    
     if (user) {
-      unsubscribeUser = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
-        if (docSnap.exists()) setUserStats({ coins: docSnap.data().coins || 0, diamonds: docSnap.data().diamonds || 0 });
-      });
+      unsubscribeUser = onSnapshot(
+        doc(db, 'users', user.uid), 
+        (docSnap) => {
+          if (docSnap.exists()) setUserStats({ coins: docSnap.data().coins || 0, diamonds: docSnap.data().diamonds || 0 });
+        },
+        (error) => {
+          console.log("Market ekranı dinleyicisi kapandı:", error.code);
+        }
+      );
     }
+    
     return () => unsubscribeUser(); 
   }, []);
 
@@ -118,6 +125,7 @@ export default function RandomMatchScreen({ navigation, route }) {
   const handleMatchmaking = (data, isTimeUp) => {
     if (hasMatched.current || !data) return;
     const myData = data[myPlayerId];
+   // ... Guest bloğu başı
     if (myData && myData.matchedRoom) {
       hasMatched.current = true;
       clearTimeout(searchTimeoutRef.current);
@@ -127,12 +135,7 @@ export default function RandomMatchScreen({ navigation, route }) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Animated.spring(matchPopAnim, { toValue: 1, friction: 5, tension: 40, useNativeDriver: true }).start();
 
-      update(ref(database, `rooms/${myData.matchedRoom}/players/${myPlayerId}`), {
-        id: myPlayerId,
-        name: cleanMyName,
-        avatar: myAvatarSeed,
-        isHost: false
-      });
+      // 🚀 DÜZELTİLDİ: Buradaki update(ref(database, rooms...)) kodu SİLİNDİ. Çünkü Host bizi zaten ekledi.
 
       remove(ref(database, `matchmaking/waiting_pool/${myPlayerId}`));
 
@@ -147,7 +150,6 @@ export default function RandomMatchScreen({ navigation, route }) {
       }, 2500);
       return;
     }
-
     const playersInPool = Object.values(data)
       .filter(p => !p.matchedRoom) 
       .sort((a, b) => a.joinedAt - b.joinedAt);
@@ -155,7 +157,7 @@ export default function RandomMatchScreen({ navigation, route }) {
       const matchedPlayers = playersInPool.slice(0, 4);
       const isMeMatched = matchedPlayers.some(p => p.id === myPlayerId);
 
-      if (isMeMatched) {
+     if (isMeMatched) {
         const amIHost = matchedPlayers[0].id === myPlayerId;
         
         if (amIHost) {
@@ -168,18 +170,33 @@ export default function RandomMatchScreen({ navigation, route }) {
           Animated.spring(matchPopAnim, { toValue: 1, friction: 5, tension: 40, useNativeDriver: true }).start();
           const newRoomId = `PUB_${Date.now().toString().slice(-5)}_${Math.random().toString(36).substring(2, 6)}`;
 
-          update(ref(database, `rooms/${newRoomId}`), {
+          // 🚀 DÜZELTİLDİ: Tek seferde (Atomic) yazmak için odayı JavaScript objesi olarak hazırlıyoruz
+          const roomData = {
             status: 'playing',
             round: 1,
-            createdAt: Date.now()
-          });
+            createdAt: Date.now(),
+            players: {}
+          };
+
+          // İnsan oyuncuları odaya ekle ve havuza sinyal gönder
           matchedPlayers.forEach(p => {
+            roomData.players[p.id] = {
+              id: p.id,
+              name: p.name,
+              avatar: p.avatar,
+              isHost: p.id === myPlayerId,
+              isBot: false
+            };
+            
+            // Havuzdaki işlemleri hallet
             if (p.id === myPlayerId) {
               remove(ref(database, `matchmaking/waiting_pool/${p.id}`));
             } else {
               update(ref(database, `matchmaking/waiting_pool/${p.id}`), { matchedRoom: newRoomId });
             }
           });
+
+          // Eksik varsa Botları oluştur ve odaya ekle
           const botsNeeded = 4 - matchedPlayers.length;
           const usedIndices = [];
           for (let i = 0; i < botsNeeded; i++) {
@@ -188,21 +205,17 @@ export default function RandomMatchScreen({ navigation, route }) {
             usedIndices.push(randIdx);
 
             const botId = `bot_${Math.random().toString(36).substring(7)}`;
-            update(ref(database, `rooms/${newRoomId}/players/${botId}`), {
+            roomData.players[botId] = {
               id: botId,
               name: BOT_NAMES[randIdx],
               avatar: BOT_AVATARS[randIdx],
               isHost: false,
               isBot: true
-            });
+            };
           }
 
-          update(ref(database, `rooms/${newRoomId}/players/${myPlayerId}`), {
-            id: myPlayerId,
-            name: cleanMyName,
-            avatar: myAvatarSeed,
-            isHost: true
-          });
+          // 🚀 DÜZELTİLDİ: Bütün odayı insanları ve botlarıyla birlikte TEK SEFERDE veritabanına yaz
+          update(ref(database, `rooms/${newRoomId}`), roomData);
 
           setTimeout(() => {
             navigation.replace('RoomScreen', { 
@@ -235,7 +248,7 @@ export default function RandomMatchScreen({ navigation, route }) {
       if (!hasMatched.current && poolDataRef.current) {
         handleMatchmaking(poolDataRef.current, true);
       }
-    }, 1000); // 30 Saniye
+    }, 20000); // 30 Saniye
 
     const unsubscribe = onValue(poolRef, (snapshot) => {
       poolDataRef.current = snapshot.val();
@@ -361,32 +374,39 @@ export default function RandomMatchScreen({ navigation, route }) {
 
               </View>
             )}
+          {matchFound && (
+                <Animated.View style={[styles.premiumMatchCard, { transform: [{ scale: matchPopAnim }] }]}>
+                  
+                  <LinearGradient
+                    colors={['#FF69EB', '#FF8A00']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.premiumGlowBackground}
+                  />
 
-            {matchFound && (
-              <Animated.View style={[styles.seniorMatchCard, { transform: [{ scale: matchPopAnim }] }]}>
-            <LinearGradient 
-              colors={['rgba(255, 255, 255, 0.95)', 'rgba(253, 240, 250, 0.95)']} 
-              start={{x: 0, y: 0}} 
-              end={{x: 1, y: 1}} 
-              style={[StyleSheet.absoluteFillObject, { borderRadius: 28 }]} 
-            />
-            
-            <View style={styles.neonBorder} />
+                  <View style={styles.premiumGlassSurface}>
 
-            {/* İkon Konteyneri */}
-            <View style={styles.matchIconWrapper}>
-              <LinearGradient 
-                colors={['#FF00D6', '#FF8A00']} 
-                start={{x: 0, y: 0}} 
-                end={{x: 1, y: 1}} 
-                style={StyleSheet.absoluteFillObject} 
-              />
-              <Ionicons name="game-controller" size={34} color="#FFF" />
-            </View>
-            <Text style={styles.matchTitle}>EŞLEŞME BULUNDU!</Text>
-            <Text style={styles.matchSubtitle}>Rakipler masaya oturuyor...</Text>
-          </Animated.View>
-            )}
+                    {/* Sol Taraf: Sadece İkon (Dönen Yükleme Kaldırıldı) */}
+                    <View style={styles.premiumIconSection}>
+                      <LinearGradient
+                        colors={['#FF69EB', '#FF8A00']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.premiumIconInner}
+                      >
+                        <MaterialCommunityIcons name="account-multiple-check" size={24} color="#FFF" />
+                      </LinearGradient>
+                    </View>
+
+                    {/* Sağ Taraf: Premium Tipografi */}
+                    <View style={styles.premiumTextSection}>
+                      <Text style={styles.premiumTitle}>Harika, eşleşme bulundu!</Text>
+                      <Text style={styles.premiumSubtitle}>Rakipler masaya bekleniyor...</Text>
+                    </View>
+
+                  </View>
+                </Animated.View>
+              )}
           </View>
         </View>
       </View>
@@ -403,9 +423,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center', 
     alignItems: 'center', 
     borderWidth: 3, 
-    borderColor: '#FF00D6', 
+    borderColor: '#FF69EB', 
     elevation: 8, 
-    shadowColor: '#FF00D6', 
+    shadowColor: '#FF69EB', 
     shadowOpacity: 0.6, 
     shadowRadius: 12, 
     shadowOffset: { width: 0, height: 4 } 
@@ -414,7 +434,7 @@ const styles = StyleSheet.create({
     marginTop: 16, 
     fontSize: 12, 
     fontWeight: '900', 
-    color: '#FF00D6', 
+    color: '#FF69EB', 
     letterSpacing: 2, 
     textShadowColor: 'rgba(255, 0, 214, 0.3)', 
     textShadowRadius: 8 
@@ -422,14 +442,14 @@ const styles = StyleSheet.create({
   cancelBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FC5C18',
+    backgroundColor: '#FF8A00',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 15,
     marginTop: 15,
-    shadowColor: '#FF4D00',
+    shadowColor: '#FF8A00',
     shadowOpacity: 0.6,
-    shadowRadius: 6,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
     elevation: 4,
   },
@@ -440,53 +460,66 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     letterSpacing: 1.5,
   },
- seniorMatchCard: {
-    width: 270,
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderRadius: 28,
-    justifyContent: 'center',
+// --- PEMBE/TURUNCU YATAY PREMIUM EŞLEŞME KARTI ---
+  premiumMatchCard: {
+    width: 380,
+    height: 76, 
     alignItems: 'center',
-    shadowColor: '#FF00D6',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.35, 
-    shadowRadius: 25,
-    elevation: 22,
+    justifyContent: 'center',
   },
-  neonBorder: {
+  premiumGlowBackground: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 28,
-    borderWidth: 2.5,
-    borderColor: '#FF00D6',
-    opacity: 0.8,
+    borderRadius: 38,
+    opacity: 0.9,
+    shadowColor: '#FF69EB',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.45,
+    shadowRadius: 25,
+    elevation: 20,
   },
-  matchIconWrapper: {
-    width: 66,
-    height: 66,
-    borderRadius: 33,
+  premiumGlassSurface: {
+    ...StyleSheet.absoluteFillObject,
+    margin: 2.5, 
+    backgroundColor: 'rgba(255, 255, 255, 0.96)', 
+    borderRadius: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  premiumIconSection: {
+    width: 46, // Spinner gittiği için alanı biraz toparladık
+    height: 46,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
-    overflow: 'hidden',
-    shadowColor: '#FF8A00',
+    marginRight: 14,
+  },
+  premiumIconInner: {
+    width: 42, // Yuvarlağı biraz daha büyüttük
+    height: 42,
+    borderRadius: 21,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#FF69EB',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.6,
     shadowRadius: 8,
-    elevation: 8,
+    elevation: 5,
   },
-  matchTitle: {
-    fontSize: 19,
-    fontWeight: '900',
-    color:  '#FF4D00',
-    letterSpacing: 1.5,
-    marginBottom: 8,
-    textAlign: 'center',
+  premiumTextSection: {
+    flex: 1,
+    justifyContent: 'center',
   },
-  matchSubtitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#64748B', 
+  premiumTitle: {
+    fontFamily: 'Nunito_900Black', 
+    fontSize: 16,
+    color: '#FF34E4',
     letterSpacing: 0.5,
-    textAlign: 'center',
+    marginBottom: 2,
+  },
+  premiumSubtitle: {
+    fontFamily: 'Nunito_700Bold', 
+    fontSize: 12,
+    color: '#FF8A00', 
+    letterSpacing: 0.2,
   },
 });

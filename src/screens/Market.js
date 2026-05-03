@@ -112,13 +112,19 @@ export default function MarketScreen({ navigation }) {
     if (!user) return;
 
     const userRef = doc(db, 'users', user.uid);
-    const unsubscribe = onSnapshot(userRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setUserCoins(data.coins || 0);
-        setUserDiamonds(data.diamonds || 0);
+    const unsubscribe = onSnapshot(
+      userRef, 
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setUserCoins(data.coins || 0);
+          setUserDiamonds(data.diamonds || 0);
+        }
+      },
+      (error) => {
+        console.log("Market dinleyicisi yetkisi düştü (Normal durum):", error.code);
       }
-    });
+    );
 
     return () => unsubscribe(); 
   }, []);
@@ -180,29 +186,26 @@ export default function MarketScreen({ navigation }) {
           showAlert("Yetersiz Elmas", "Yeterli elmasınız yok. Lütfen premium elmas satın alın.");
         }
       } 
-      else if (item.type === 'real') {
+     else if (item.type === 'real') {
         playSound('click');
         showAlert(
-          "Ödeme Onayı", 
-          `${item.price} tutarındaki ödeme App Store / Google Play üzerinden yapılacaktır. Onaylıyor musunuz?`,
-          [
-            { text: "İptal", style: "cancel", onPress: () => setIsPurchasing(false) },
-            { 
-              text: "Satın Al", 
-              onPress: async () => {
-                setTimeout(async () => {
-                  await updateDoc(userRef, { diamonds: increment(item.amount) });
-                  playSound('success'); 
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                  showAlert("Ödeme Başarılı!", `Tebrikler, +${item.amount} Elmas hesabınıza eklendi.`);
-                  setModalVisible(false);
-                  setIsPurchasing(false);
-                }, 1500); 
-              }
-            }
-          ]
+          "Premium Mağaza Yakında!", 
+          "Gerçek para ile elmas satın alma özelliği şu an test aşamasındadır. Çok yakında App Store ve Google Play üzerinden güvenle satın alım yapabileceksiniz.",
+          [{ text: "Anladım", style: "cancel" }]
         );
+        setIsPurchasing(false);
         return; 
+        
+        /* 🚀 STORE'A ÇIKARKEN BURASI REVENUECAT VEYA EXPO-IAP İLE DEĞİŞECEK
+        try {
+           const purchaseInfo = await Purchases.purchasePackage(item.package);
+           if (purchaseInfo) {
+              await updateDoc(userRef, { diamonds: increment(item.amount) });
+           }
+        } catch (e) {
+           if (!e.userCancelled) { showAlert("Hata", "Ödeme iptal edildi."); }
+        }
+        */
       }
     } catch (error) {
       console.error("Satın alma hatası:", error);
@@ -425,7 +428,14 @@ export default function MarketScreen({ navigation }) {
             {/* Modal Sürükleme Çubuğu */}
             <View style={styles.modalDragIndicator} />
             
-            <TouchableOpacity style={styles.closeBtn} onPress={() => { playSound('click'); setModalVisible(false); }}>
+          <TouchableOpacity 
+            style={styles.closeBtn} 
+            disabled={isPurchasing} // 🚀 EKLENDİ
+            onPress={() => { 
+              if(isPurchasing) return; // 🚀 EKLENDİ
+              playSound('click'); 
+              setModalVisible(false); 
+            }}>
               <Ionicons name="close-circle" size={30} color="#CBD5E1" />
             </TouchableOpacity>
 

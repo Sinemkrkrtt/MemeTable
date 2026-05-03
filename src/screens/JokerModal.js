@@ -1,13 +1,11 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Modal, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useFonts, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold, Nunito_900Black } from '@expo-google-fonts/nunito';
 import { Image } from 'expo-image';
 import { doc, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
 import { db, auth } from '../services/firebase'; 
-
-const { width, height } = Dimensions.get('window');
 
 const palet = {
   pink: '#FF69EB',
@@ -45,12 +43,16 @@ const JOKERS = [
   }
 ];
 
-export default function JokerModal({ visible, onClose, onUseJoker, selectedCard }) {
+export default function JokerModal({ visible, onClose, onUseJoker, selectedCard, isMarketMode = false }) {
+  const { width, height } = useWindowDimensions();
+
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef(JOKERS.map(() => new Animated.Value(0))).current;
   const [realtimeInventory, setRealtimeInventory] = useState({ joker_skip: 0, joker_double: 0, joker_freeze: 0 });
   const [userCoins, setUserCoins] = useState(0);
+
+  const [buyingJokerId, setBuyingJokerId] = useState(null);
 
   let [fontsLoaded] = useFonts({
     Nunito_600SemiBold,
@@ -60,23 +62,28 @@ export default function JokerModal({ visible, onClose, onUseJoker, selectedCard 
   });
 
   useEffect(() => {
+    let unsubscribe;
     const user = auth.currentUser;
-    if (!user) return;
+    
+    // Sadece modal açıkken Firebase dinlenir (Performans tasarrufu)
+    if (visible && user) {
+      unsubscribe = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setUserCoins(data.coins || 0);
+          setRealtimeInventory({
+            joker_skip: data.joker_skip || 0,
+            joker_double: data.joker_double || 0,
+            joker_freeze: data.joker_freeze || 0,
+          });
+        }
+      });
+    }
 
-    const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setUserCoins(data.coins || 0);
-        setRealtimeInventory({
-          joker_skip: data.joker_skip || 0,
-          joker_double: data.joker_double || 0,
-          joker_freeze: data.joker_freeze || 0,
-        });
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [visible]);
 
   // MODAL ANİMASYONLARI
   useEffect(() => {
@@ -96,149 +103,187 @@ export default function JokerModal({ visible, onClose, onUseJoker, selectedCard 
     }
   }, [visible]);
 
-  // OYUN İÇİ SATIN ALMA FONKSİYONU
   const handleBuyJoker = async (joker) => {
+    if (buyingJokerId) return; // Zaten işlem yapılıyorsa durdur
+    
     const user = auth.currentUser;
     if (!user) return;
 
     if (userCoins >= joker.price) {
+      setBuyingJokerId(joker.id); // Butonu kilitle
       try {
         await updateDoc(doc(db, 'users', user.uid), {
           coins: increment(-joker.price),
           [joker.id]: increment(1)
         });
       } catch (error) {
+        console.log("Satın alma hatası:", error);
         Alert.alert("Hata", "İşlem başarısız oldu.");
+      } finally {
+        setBuyingJokerId(null); // İşlem bitince kilidi aç
       }
     } else {
       Alert.alert("Yetersiz Coin", "Bu jokeri almak için kasanızda yeterli coin bulunmuyor.");
     }
   };
 
-  if (!visible || !fontsLoaded) return null;
+  if (!fontsLoaded) return null;
 
   return (
-    <View style={styles.absoluteOverlay}>
-      <Animated.View style={[styles.overlayBackground, { opacity: fadeAnim }]}>
-        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
-      </Animated.View>
+    <Modal 
+      visible={visible} 
+      transparent={true} 
+      animationType="none" 
+      onRequestClose={onClose}
+      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
+    >
+      <View style={styles.absoluteOverlay}>
+        <Animated.View style={[styles.overlayBackground, { opacity: fadeAnim }]}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+        </Animated.View>
       
-      <Animated.View style={[styles.modalContent, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-        
-        {/* SOL ŞERİT (Premium Tasarım) */}
-        <View style={styles.glassSidebar}>
-          <LinearGradient colors={['rgba(255, 105, 235, 0.1)', 'transparent']} style={styles.glassEffect} />
-          <View style={styles.sidebarTopIcon}>
-            <Ionicons name="flash" size={24} color={palet.pink} />
-          </View>
+        {/* 🚀 DİNAMİK GENİŞLİK VE YÜKSEKLİK BURAYA EKLENDİ */}
+        <Animated.View style={[
+          styles.modalContent, 
+          { 
+            width: width > 600 ? 750 : '90%', 
+            height: height > 400 ? 360 : '80%', 
+            opacity: fadeAnim, 
+            transform: [{ scale: scaleAnim }] 
+          }
+        ]}>
           
-          <View style={styles.textContainer}>
-             
-          </View>
-
-          {/* Anlık Coin Gösterimi */}
-          <View style={styles.coinBadge}>
-            <FontAwesome5 name="coins" size={10} color="#FFDC5E" />
-            <Text style={styles.coinText}>{userCoins}</Text>
-          </View>
-        </View>
-
-        {/* SAĞ ANA İÇERİK ALANI */}
-        <View style={styles.mainContent}>
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <Text style={styles.headerTitle}>Jokerler</Text>
-              <View style={styles.activeBadge}>
-                 <View style={styles.dot} />
-                 <Text style={styles.activeText}>AKTİF</Text>
-              </View>
+          {/* SOL ŞERİT */}
+          <View style={styles.glassSidebar}>
+            <LinearGradient colors={['rgba(255, 105, 235, 0.1)', 'transparent']} style={styles.glassEffect} />
+            <View style={styles.sidebarTopIcon}>
+              <Ionicons name={isMarketMode ? "cart" : "flash"} size={24} color={palet.pink} />
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeCircle}>
-              <Ionicons name="close" size={22} color="#94A3B8" />
-            </TouchableOpacity>
+            
+            <View style={styles.textContainer} />
+
+            {/* Anlık Coin Gösterimi */}
+            <View style={styles.coinBadge}>
+              <FontAwesome5 name="coins" size={10} color="#FFDC5E" />
+              <Text style={styles.coinText}>{userCoins}</Text>
+            </View>
           </View>
 
-          <View style={styles.grid}>
-           {JOKERS.map((joker, index) => {
-              const currentCount = realtimeInventory[joker.id] || 0;
-              const hasItem = currentCount > 0;
-              const isSkipDisabled = joker.id === 'joker_skip' && !selectedCard;
-              
-              const cardOpacity = cardAnims[index];
-              const cardScale = cardAnims[index].interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] });
+          {/* SAĞ ANA İÇERİK ALANI */}
+          <View style={styles.mainContent}>
+            <View style={styles.header}>
+              <View style={styles.headerLeft}>
+                {/* Market modundaysa başlık değişir */}
+                <Text style={styles.headerTitle}>{isMarketMode ? 'Joker Market' : 'Jokerler'}</Text>
+                <View style={styles.activeBadge}>
+                   <View style={styles.dot} />
+                   <Text style={styles.activeText}>{isMarketMode ? 'MAĞAZA' : 'AKTİF'}</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={onClose} style={styles.closeCircle}>
+                <Ionicons name="close" size={22} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
 
-              let btnText = '';
-              let btnColors = [];
-              let onBtnPress = null;
-              let isBtnDisabled = false;
+            <View style={styles.grid}>
+             {JOKERS.map((joker, index) => {
+                const currentCount = realtimeInventory[joker.id] || 0;
+                const hasItem = currentCount > 0;
+                const isSkipDisabled = !isMarketMode && joker.id === 'joker_skip' && !selectedCard;
+                
+                // 🚀 HANGİ BUTONUN YÜKLENDİĞİNİ ANLAMAK İÇİN EKLENDİ
+                const isCurrentlyBuying = buyingJokerId === joker.id; 
+                
+                const cardOpacity = cardAnims[index];
+                const cardScale = cardAnims[index].interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] });
 
-              if (!hasItem) {
-                btnText = `${joker.price} AL`;
-                btnColors = [palet.yellow, palet.orange];
-                onBtnPress = () => handleBuyJoker(joker);
-              } else if (isSkipDisabled) {
-                btnText = 'KART SEÇ';
-                btnColors = ['#E2E8F0', '#CBD5E1'];
-                isBtnDisabled = true;
-              } else {
-                btnText = 'KULLAN';
-                btnColors = [joker.color, palet.pink];
-                onBtnPress = () => {
-                  onUseJoker(joker.id);
-                  onClose(); 
-                };
-              }
+                let btnText = '';
+                let btnColors = [];
+                let onBtnPress = null;
+                let isBtnDisabled = false;
 
-return (
-      <Animated.View key={joker.id} style={[styles.card, { opacity: cardOpacity, transform: [{ scale: cardScale }] }]}>
-          <View style={styles.cardTop}>
-             <View style={[styles.imgWrapper, !hasItem && { opacity: 0.6, filter: 'grayscale(0.5)' }]}>
-                  <Image 
-                    source={joker.logo} 
-                    style={styles.jokerImg} 
-                    contentFit="contain" 
-                    priority="high" 
-                    cachePolicy="memory" 
-                  />
-                      
-           {/* Envanter Sayısı Badge'i */}
-           {hasItem && (
-             <View style={[styles.badge, { backgroundColor: joker.color }]}>
-               <Text style={styles.badgeText}>{currentCount}</Text>
-                        </View>
-                      )}
+                // AKILLI BUTON MANTIĞI
+                if (isMarketMode || !hasItem) {
+                  btnText = `${joker.price} AL`;
+                  // 🚀 HERHANGİ BİR JOKER ALINIYORSA TÜM BUTONLAR KİLİTLENİR (ÇİFT TIKLAMAYI ÖNLER)
+                  isBtnDisabled = userCoins < joker.price || buyingJokerId !== null; 
+                  btnColors = isBtnDisabled ? ['#E2E8F0', '#CBD5E1'] : [palet.yellow, palet.orange];
+                  onBtnPress = () => handleBuyJoker(joker);
+                } else if (isSkipDisabled) {
+                  btnText = 'KART SEÇ';
+                  btnColors = ['#E2E8F0', '#CBD5E1'];
+                  isBtnDisabled = true;
+                } else {
+                  btnText = 'KULLAN';
+                  isBtnDisabled = buyingJokerId !== null;
+                  btnColors = isBtnDisabled ? ['#E2E8F0', '#CBD5E1'] : [joker.color, palet.pink];
+                  onBtnPress = () => {
+                    if (onUseJoker) onUseJoker(joker.id);
+                    onClose(); 
+                  };
+                }
+
+                return (
+                  <Animated.View key={joker.id} style={[styles.card, { opacity: cardOpacity, transform: [{ scale: cardScale }] }]}>
+                    <View style={styles.cardTop}>
+                      {/* Market modunda joker varsa resim renkli kalsın, oyun içindeyse ve joker yoksa soluklaşsın */}
+                      <View style={[styles.imgWrapper, (!hasItem && !isMarketMode) && { opacity: 0.6, filter: 'grayscale(0.5)' }]}>
+                        <Image 
+                          source={joker.logo} 
+                          style={styles.jokerImg} 
+                          contentFit="contain" 
+                          priority="high" 
+                          cachePolicy="memory" 
+                        />
+                            
+                        {/* Envanter Sayısı Badge'i */}
+                        {hasItem && (
+                          <View style={[styles.badge, { backgroundColor: joker.color }]}>
+                            <Text style={styles.badgeText}>{currentCount}</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
-                  </View>
 
-                  <View style={styles.cardInfo}>
-                    <Text style={styles.jokerName}>{joker.name}</Text>
-                    <Text style={styles.jokerDesc} numberOfLines={2}>{joker.desc}</Text>
-                  </View>
+                    <View style={styles.cardInfo}>
+                      <Text style={styles.jokerName}>{joker.name}</Text>
+                      <Text style={styles.jokerDesc} numberOfLines={2}>{joker.desc}</Text>
+                    </View>
 
-                  <TouchableOpacity disabled={isBtnDisabled} onPress={onBtnPress} style={styles.useBtn} activeOpacity={0.8}>
-                    <LinearGradient
-                      colors={btnColors}
-                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                      style={styles.btnGradient}
-                    >
-                      {!hasItem && <FontAwesome5 name="coins" size={10} color="white" style={{ marginRight: 4 }} />}
-                      <Text style={[styles.btnText, isBtnDisabled && { color: '#64748B' }]}>
-                        {btnText}
-                      </Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </Animated.View>
-              );
-            })}
+                    <TouchableOpacity disabled={isBtnDisabled} onPress={onBtnPress} style={styles.useBtn} activeOpacity={0.8}>
+                      <LinearGradient
+                        colors={btnColors}
+                        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                        style={styles.btnGradient}
+                      >
+                        {/* 🚀 ACTIVITY INDICATOR (YÜKLENİYOR İKONU) BURAYA EKLENDİ */}
+                        {isCurrentlyBuying ? (
+                          <ActivityIndicator size="small" color="white" />
+                        ) : (
+                          <>
+                            {(!hasItem || isMarketMode) && !isSkipDisabled && (
+                              <FontAwesome5 name="coins" size={10} color={isBtnDisabled ? '#94A3B8' : 'white'} style={{ marginRight: 4 }} />
+                            )}
+                            <Text style={[styles.btnText, isBtnDisabled && { color: '#64748B' }]}>
+                              {btnText}
+                            </Text>
+                          </>
+                        )}
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </Animated.View>
+                );
+              })}
+            </View>
           </View>
-        </View>
-      </Animated.View>
-    </View>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
-              
+
+// 🚀 STYLES BÖLÜMÜ EKLENDİ
 const styles = StyleSheet.create({
-  // --- OVERLAY VE MODAL YAPI ---
   absoluteOverlay: { 
     ...StyleSheet.absoluteFillObject, 
     zIndex: 9999, 
@@ -251,8 +296,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.7)' 
   },
   modalContent: {
-    width: width > 600 ? 750 : '90%', 
-    height: height > 400 ? 360 : '80%', 
     backgroundColor: palet.bg,
     borderRadius: 36,
     flexDirection: 'row',
@@ -263,8 +306,6 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 }
   },
-
-  // --- YAN PANEL (SIDEBAR) ---
   glassSidebar: {
     width: 70,
     backgroundColor: 'white',
@@ -325,8 +366,6 @@ const styles = StyleSheet.create({
     fontSize: 10, 
     marginTop: 4 
   },
-
-  // --- ANA İÇERİK ALANI (MAIN CONTENT) ---
   mainContent: { 
     flex: 1, 
     padding: 25, 
@@ -382,8 +421,6 @@ const styles = StyleSheet.create({
     shadowRadius: 5, 
     elevation: 2 
   },
-
-  // --- GRID VE KART YAPISI ---
   grid: { 
     flex: 1, 
     flexDirection: 'row', 
@@ -438,8 +475,6 @@ const styles = StyleSheet.create({
     color: '#FFF', 
     fontSize: 10 
   },
-
-  // --- KART BİLGİSİ VE BUTONLAR ---
   cardInfo: { 
     alignItems: 'center', 
     marginVertical: 8 
