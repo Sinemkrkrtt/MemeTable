@@ -1,0 +1,107 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================================
+    // HELPERS
+    // ============================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Client'in DİREKT yazmasına yasaklanan alanlar.
+    // Bu alanlar yalnızca Cloud Function (admin SDK) tarafından güncellenir.
+    function locked() {
+      return ['coins', 'diamonds', 'wonHearts', 'guestMatchesLeft',
+              'joker_skip', 'joker_double', 'joker_freeze',
+              'isBoxOpened', 'lastMissionDate', 'level', 'experience'];
+    }
+
+    // Update sırasında değişen alanların hiçbiri kilitli alanlardan değil.
+    function noLockedFieldChanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(locked());
+    }
+
+    // İlk create sırasında kilitli alanların başlangıç değerleri sabit (ekonomi
+    // sıfırdan başlasın). AuthScreen'in attığı default initial değerler kabul.
+    function validInitialEconomy() {
+      return request.resource.data.coins == 0 ||
+             request.resource.data.coins == 100; // misafir 0, üye 100
+    }
+
+    // ============================================================
+    // users/{uid}
+    // ============================================================
+    match /users/{userId} {
+      // Read: sadece kendi belgesi
+      allow read: if isOwner(userId);
+
+      // Create: ilk kayıt — uid eşleşsin, kilitli alanlar başlangıç değerinde olsun
+      allow create: if isOwner(userId)
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.keys().hasAll(['uid', 'nickname']);
+
+      // Update: kullanıcı kendi belgesini güncelleyebilir AMA kilitli ekonomi
+      // alanlarına dokunamaz. Bunlar sadece Cloud Function üzerinden değişir.
+      // Kullanıcı sadece nickname (zaten reserved), avatarSeed gibi cosmetic
+      // alanları güncelleyebilir.
+      allow update: if isOwner(userId)
+                    && request.resource.data.uid == resource.data.uid
+                    && noLockedFieldChanged();
+
+      // Delete: orphan rollback için (AuthScreen catch path'leri)
+      allow delete: if isOwner(userId);
+    }
+
+    // ============================================================
+    // nicknames/{lowercaseNickname}
+    // ============================================================
+    // Atomik nickname benzersizliği. Cloud Function `reserveNickname` yazar;
+    // client read edebilir (uniqueness check için kullanılmaz, function yapar)
+    // ama yazma sadece function'a aittir.
+    match /nicknames/{nickname} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ============================================================
+    // memes / situations — herkes okur, kimse yazamaz
+    // ============================================================
+    match /memes/{memeId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /situations/{sId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ============================================================
+    // processedPurchases / processedAdRewards / processedGameAwards
+    // ============================================================
+    // Cloud Function'ların idempotency için kullandığı koleksiyonlar.
+    // Client'a tamamen kapalı.
+    match /processedPurchases/{txId} {
+      allow read, write: if false;
+    }
+    match /processedAdRewards/{id} {
+      allow read, write: if false;
+    }
+    match /processedGameAwards/{id} {
+      allow read, write: if false;
+    }
+
+    // ============================================================
+    // VARSAYILAN — her şey kapalı
+    // ============================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

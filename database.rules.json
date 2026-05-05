@@ -1,0 +1,19 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "rooms": {
+      "$roomId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+
+        "players": {
+          "$playerId": {
+            ".write": "auth != null && (auth.uid === $playerId || root.child('rooms').child($roomId).child('players').child(auth.uid).child('isHost').val() === true)"
+          }
+        }
+      }
+    }
+  }
+}

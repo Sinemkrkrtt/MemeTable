@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getDatabase } from "firebase/database";
+import { getFunctions } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: "AIzaSyC2AGoRD3uwkOzSGlfNngnGHVwrHKiPUws",
@@ -33,8 +34,10 @@ if (getApps().length === 0) {
   auth = getAuth(app); 
 }
 
-const db = getFirestore(app);      
-const storage = getStorage(app);  
-const database = getDatabase(app); 
+const db = getFirestore(app);
+const storage = getStorage(app);
+const database = getDatabase(app);
+// Cloud Functions — region functions/index.js içindeki setGlobalOptions ile uyumlu
+const functions = getFunctions(app, 'europe-west1');
 
-export { app, auth, db, storage, database };
+export { app, auth, db, storage, database, functions };

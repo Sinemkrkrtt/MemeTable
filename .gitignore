@@ -39,3 +39,14 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Firebase service account credentials — ASLA commit etme
+serviceAccount*.json
+firebase-admin*.json
+google-services-admin*.json
+*-firebase-adminsdk-*.json
+
+# Cloud Functions build output
+functions/lib/
+functions/.runtimeconfig.json
+

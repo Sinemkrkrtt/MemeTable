@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, ScrollView, useWindowDimensions, ActivityIndicator, BackHandler } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -6,15 +6,15 @@ import { Ionicons, Entypo } from '@expo/vector-icons';
 import { styles } from './RoomScreenStyles';
 import ScoreScreen from './scoreScreen';
 import JokerModal from './JokerModal';
-import { doc, updateDoc, increment, onSnapshot } from 'firebase/firestore';
-import { db, auth, database } from '../services/firebase';
+import { doc, updateDoc, increment, onSnapshot, getDocs, collection } from 'firebase/firestore'; 
 import { ref, onValue, update, onDisconnect, remove } from 'firebase/database'; 
+import { db, auth, database } from '../services/firebase'; // Kendi servis dosyan
 import DisconnectModal from './DisconnectModal'; 
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { supabase } from '../services/supabaseClient'; 
+
 
 const hashStr = (str) => {
   let h = 0;
@@ -202,28 +202,30 @@ export default function RoomScreen({ navigation, route }) {
     }
   }, [amIHost, currentPrompt, situationPrompts, roomId]);
 
-  useEffect(() => {
-    const fetchSupabaseData = async () => {
+ useEffect(() => {
+    const fetchFirebaseData = async () => {
       try {
-        const { data: memesData, error: memesError } = await supabase.from('memes').select('*');
-        if (memesError) {
-           console.error("Memes Hatası:", JSON.stringify(memesError, null, 2)); 
-        } else {
-           setOfficialMemes(memesData || []);
-        }
-        const { data: situationsData, error: situationsError } = await supabase.from('situations').select('*');
-        if (situationsError) {
-           console.error("Situations Hatası:", JSON.stringify(situationsError, null, 2)); 
-        } else {
-          const prompts = situationsData.map(s => s.content);
-          setSituationPrompts(prompts);
-        }
+        // 🚀 MEME'LERİ ÇEK (Supabase yerine Firebase Firestore)
+        const memesCol = collection(db, 'memes');
+        const memesSnapshot = await getDocs(memesCol);
+        const memesList = memesSnapshot.docs.map(doc => ({
+          ...doc.data(),
+          id: doc.id // Firestore döküman ID'sini alıyoruz
+        }));
+        setOfficialMemes(memesList);
+
+        // 🚀 DURUMLARI (SITUATIONS) ÇEK
+        const situationsCol = collection(db, 'situations');
+        const situationsSnapshot = await getDocs(situationsCol);
+        const prompts = situationsSnapshot.docs.map(doc => doc.data().content);
+        setSituationPrompts(prompts);
+
       } catch (error) {
-        console.error("Supabase veri çekme hatası:", JSON.stringify(error, null, 2));
+        console.error("Firebase veri çekme hatası:", error);
       }
     };
 
-    fetchSupabaseData();
+    fetchFirebaseData();
   }, []);
 
   useEffect(() => {
@@ -750,6 +752,28 @@ export default function RoomScreen({ navigation, route }) {
         }, 4000); 
       }
     };
+
+    // Maç başladığında misafir hakkını düşüren useEffect
+    useEffect(() => {
+      const deductGuestMatch = async () => {
+        const user = auth.currentUser;
+        if (user && user.isAnonymous) {
+          try {
+            const userRef = doc(db, 'users', user.uid);
+            await updateDoc(userRef, {
+              guestMatchesLeft: increment(-1)
+            });
+            console.log("Maç başladı: Misafir hakkı 1 azaltıldı.");
+          } catch (error) {
+            console.error("Can düşerken hata oluştu:", error);
+          }
+        }
+      };
+
+      if (isRoomReady) {
+        deductGuestMatch();
+      }
+    }, [isRoomReady]);
 
   const handleHostNewRound = () => {
     if (amIHost && roomId && situationPrompts.length > 0) { 
