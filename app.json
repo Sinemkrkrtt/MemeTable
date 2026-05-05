@@ -16,7 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.sinem.memetable",
       "infoPlist": {
-        "NSCameraUsageDescription": "Meme odalarına QR kod ile katılabilmen için kamera iznine ihtiyacımız var Sinem! 📸"
+        "NSCameraUsageDescription": "Meme odalarına QR kod ile katılabilmen için kamera iznine ihtiyacımız var Sinem! 📸",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -27,7 +28,10 @@
       "package": "com.sinem.memetable",
       "edgeToEdgeEnabled": true,
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
@@ -49,6 +53,11 @@
       ],
       "expo-font",
       "expo-audio"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "5b92aa6f-e347-4e66-ba09-8c8a53b36140"
+      }
+    }
   }
 }

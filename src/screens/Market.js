@@ -19,6 +19,8 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { doc, onSnapshot, updateDoc, increment } from 'firebase/firestore'; 
 import { db, auth } from '../services/firebase'; 
+import { RewardedAd, TestIds, RewardedAdEventType } from 'react-native-google-mobile-ads';
+import Purchases from 'react-native-purchases';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 55) / 2;
@@ -81,6 +83,39 @@ export default function MarketScreen({ navigation }) {
   const successSound = useAudioPlayer(require('../../assets/sounds/cha-ching.mp3'));
   const errorSound = useAudioPlayer(require('../../assets/sounds/error.mp3'));
 
+  const adUnitId = __DEV__ ? TestIds.REWARDED : 'ca-app-pub-xxxxxxxxxxxxx';
+  const showRewardAd = () => {
+  const rewarded = RewardedAd.createForAdUnit(adUnitId);
+  
+  rewarded.addAdEventListener(RewardedAdEventType.EARNED_REWARD, (reward) => {
+    // Kullanıcı reklamı izledi, +50 coin ver
+    handleRewardSuccess(50);
+  });
+
+  rewarded.load();
+  rewarded.show();
+};
+
+
+const handleRewardSuccess = async (amount) => {
+    const user = auth.currentUser;
+    if (!user) return;
+    
+    const userRef = doc(db, 'users', user.uid);
+    try {
+      await updateDoc(userRef, {
+        coins: increment(amount)
+      });
+      playSound('success');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showAlert("Tebrikler!", `Reklamı başarıyla izledin ve +${amount} Coin kazandın.`);
+    } catch (error) {
+      console.error("Reklam ödülü hatası:", error);
+      showAlert("Hata", "Ödül verilirken bir sorun oluştu.");
+    }
+  };
+
+  
   const playSound = (type) => {
     try {
       if (type === 'click') {
@@ -186,27 +221,23 @@ export default function MarketScreen({ navigation }) {
           showAlert("Yetersiz Elmas", "Yeterli elmasınız yok. Lütfen premium elmas satın alın.");
         }
       } 
-     else if (item.type === 'real') {
-        playSound('click');
-        showAlert(
-          "Premium Mağaza Yakında!", 
-          "Gerçek para ile elmas satın alma özelliği şu an test aşamasındadır. Çok yakında App Store ve Google Play üzerinden güvenle satın alım yapabileceksiniz.",
-          [{ text: "Anladım", style: "cancel" }]
-        );
-        setIsPurchasing(false);
-        return; 
-        
-        /* 🚀 STORE'A ÇIKARKEN BURASI REVENUECAT VEYA EXPO-IAP İLE DEĞİŞECEK
-        try {
-           const purchaseInfo = await Purchases.purchasePackage(item.package);
-           if (purchaseInfo) {
-              await updateDoc(userRef, { diamonds: increment(item.amount) });
-           }
-        } catch (e) {
-           if (!e.userCancelled) { showAlert("Hata", "Ödeme iptal edildi."); }
-        }
-        */
-      }
+    // handlePurchase fonksiyonu içindeki 'real' kısmı için:
+else if (item.type === 'real') {
+  try {
+    // RevenueCat veya Expo IAP tetikleme
+    const purchaseMade = await Purchases.purchasePackage(item.package);
+    
+    if (typeof purchaseMade.customerInfo.entitlements.active['premium'] !== "undefined") {
+      // Satın alım başarılı, Firebase'i güncelle
+      await updateDoc(userRef, { diamonds: increment(item.amount) });
+      showAlert("Başarılı", "Elmaslar hesabına eklendi!");
+    }
+  } catch (e) {
+    if (!e.userCancelled) {
+      showAlert("Hata", "Ödeme işlemi sırasında bir sorun oluştu.");
+    }
+  }
+}
     } catch (error) {
       console.error("Satın alma hatası:", error);
       playSound('error');
@@ -363,10 +394,14 @@ export default function MarketScreen({ navigation }) {
         </View>
         
         <TouchableOpacity 
-          style={styles.adBannerCard} 
-          activeOpacity={0.9} 
-          onPress={() => { playSound('click'); showAlert('Reklam', 'Bu özellik uygulama markete yüklendiğinde aktif olacaktır.'); }}
-        >
+            style={styles.adBannerCard} 
+            activeOpacity={0.9} 
+            onPress={() => { 
+              playSound('click'); 
+              showAlert('Reklam Yükleniyor', 'Lütfen bekleyin, test reklamı hazırlanıyor...', [{ text: 'Tamam' }]);
+              showRewardAd(); 
+            }}
+            >
           <LinearGradient colors={[palet.orange, palet.pink]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.adBannerGradient}>
             <View style={styles.adBannerInfo}>
               <View style={styles.adIconContainer}>
