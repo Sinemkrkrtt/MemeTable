@@ -11,8 +11,8 @@ import {
   purchaseUpdatedListener,
   purchaseErrorListener,
 } from 'react-native-iap';
-import { auth } from '../services/firebase';
-import { api, describeApiError } from '../services/api';
+import { auth, db } from '../services/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
@@ -50,10 +50,12 @@ export default function GuestLimitScreen({ navigation }) {
         console.log("App Store Ürünleri:", products);
 
         purchaseUpdateSubscription = purchaseUpdatedListener(async (purchase) => {
-          const token = purchase?.purchaseToken ?? purchase?.id;
-          if (!token) return;
+          // Bu ekran sadece matches_3 ürününü işler; diğer SKU'lar (Market'ten gelen
+          // elmas paketleri vb.) ilgili ekranın listener'ına bırakılır.
+          if (purchase?.productId && purchase.productId !== itemSkus[0]) return;
 
-          const txId = purchase?.id ?? token;
+          const txId = purchase?.id;
+          if (!txId) return;
           if (processedTxRef.current.has(txId)) {
             try { await finishTransaction({ purchase, isConsumable: true }); } catch {}
             return;
@@ -68,26 +70,18 @@ export default function GuestLimitScreen({ navigation }) {
           }
 
           try {
-            // Cloud Function ile receipt doğrulama + Firestore güncellemesi sunucu tarafında
-            await api.validatePurchase({
-              platform: Platform.OS,
-              productId: purchase.productId
-                ?? (Array.isArray(purchase.productIds) ? purchase.productIds[0] : null)
-                ?? itemSkus[0],
-              transactionId: purchase.id ?? token,
-              receipt: purchase.transactionReceipt ?? purchase.purchaseToken,
-              purchaseToken: purchase.purchaseToken,
-            });
+            // SANDBOX/DEV: backend doğrulaması yok — direkt guestMatchesLeft = 3 yaz.
+            // Production öncesi JWS verify backend'i geri açılmalı.
+            const userRef = doc(db, 'users', user.uid);
+            await updateDoc(userRef, { guestMatchesLeft: 3 });
             await finishTransaction({ purchase, isConsumable: true });
             setLoading(false);
-            Alert.alert("Başarılı!", "3 yeni oyun hakkı tanımlandı.", [
-              { text: "Tamam", onPress: () => navigation.navigate('Home') }
-            ]);
+            navigation.navigate('Home');
           } catch (e) {
-            console.warn('Sunucu doğrulama hatası:', e);
+            console.warn('Satın alma sonrası güncelleme hatası:', e);
             processedTxRef.current.delete(txId);
             setLoading(false);
-            Alert.alert('Hata', describeApiError(e));
+            Alert.alert('Hata', e?.message || 'İşlem tamamlanamadı.');
           }
         });
 

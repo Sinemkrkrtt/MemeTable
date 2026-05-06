@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react'; // 🚀 useRef eklendi
+import React, { useState, useEffect, useRef } from 'react'; // 🚀 useRef EKLENDİ
 import { 
   View, Text, TextInput, TouchableOpacity, StyleSheet, Image, KeyboardAvoidingView, Platform, 
   StatusBar, Dimensions, ActivityIndicator, ScrollView, Keyboard,
-  Modal, Animated // 🚀 Animated eklendi
+  Modal, Animated // 🚀 Animated EKLENDİ
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,7 +12,7 @@ import {
   signInWithEmailAndPassword, 
   updateProfile,
   sendPasswordResetEmail,
-  deleteUser 
+  signInAnonymously 
 } from "firebase/auth";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { doc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
@@ -40,31 +40,30 @@ export default function AuthScreen() {
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState({ title: '', message: '' });
 
-  // 🚀 LOGO ANİMASYON DEĞERLERİ EKLENDİ
   const logoAnimHeight = useRef(new Animated.Value(width * 0.55)).current;
-  const logoAnimMargin = useRef(new Animated.Value(20)).current;
+  const logoAnimMargin = useRef(new Animated.Value(15)).current;
 
-  useEffect(() => {
+useEffect(() => {
     const showSubscription = Keyboard.addListener('keyboardDidShow', () => {
       setKeyboardStatus(true);
-      // Klavye açılınca yavaşça küçült
+      // Klavye açılınca yumuşakça küçült
       Animated.parallel([
         Animated.timing(logoAnimHeight, {
-          toValue: height * 0.15,
-          duration: 250, // 250 milisaniye (akıcı geçiş süresi)
+          toValue: height * 0.12,
+          duration: 250, // Saniye cinsinden hız (250ms = çeyrek saniye)
           useNativeDriver: false,
         }),
         Animated.timing(logoAnimMargin, {
-          toValue: 10,
+          toValue: 5,
           duration: 250,
           useNativeDriver: false,
         })
       ]).start();
     });
-    
+
     const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
       setKeyboardStatus(false);
-      // Klavye kapanınca yavaşça eski haline getir
+      // Klavye kapanınca yumuşakça eski haline getir
       Animated.parallel([
         Animated.timing(logoAnimHeight, {
           toValue: width * 0.55,
@@ -72,7 +71,7 @@ export default function AuthScreen() {
           useNativeDriver: false,
         }),
         Animated.timing(logoAnimMargin, {
-          toValue: 20,
+          toValue: 15,
           duration: 250,
           useNativeDriver: false,
         })
@@ -108,6 +107,41 @@ export default function AuthScreen() {
     }
   };
 
+  const handleGuestLogin = async () => {
+    setLoading(true);
+    try {
+      const userCredential = await signInAnonymously(auth);
+      const user = userCredential.user;
+      
+      const guestNickname = "Misafir_" + user.uid.substring(0, 4).toUpperCase();
+      await updateProfile(user, { displayName: guestNickname });
+
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid, 
+        nickname: guestNickname, 
+        email: "Misafir Hesabı", 
+        isGuest: true, 
+        guestMatchesLeft: 3, 
+        createdAt: new Date(),
+        coins: 0, 
+        diamonds: 0, 
+        joker_skip: 0, 
+        joker_double: 0, 
+        joker_freeze: 0,
+        wonHearts: 0, 
+        isBoxOpened: false, 
+        level: 1, 
+        experience: 0
+      }, { merge: true }); 
+
+    } catch (error) {
+      console.log("Misafir Girişi Hatası:", error);
+      showAlert("Hata", "Misafir girişi yapılamadı. Bağlantınızı kontrol edin.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAuth = async () => {
     const cleanEmail = email.trim();
     const cleanNickname = nickname.trim();
@@ -128,14 +162,11 @@ export default function AuthScreen() {
       return;
     }
 
-    // 🚀 BURASI YENİ EKLENDİ: OYUN İÇİ NICKNAME GÜVENLİK DUVARI
     if (!isLogin) {
-      // 3 ile 12 karakter sınırı (Oyun masası tasarımı taşmasın diye)
       if (cleanNickname.length < 3 || cleanNickname.length > 12) {
         showAlert("Geçersiz İsim", "Kullanıcı adın 3 ile 12 karakter arasında olmalıdır.");
         return;
       }
-      // Sadece harf, rakam ve Türkçe karakterlere izin ver (Özel sembol ve boşluk yasak)
       const nicknameRegex = /^[a-zA-Z0-9ğüşıöçĞÜŞİÖÇ]+$/;
       if (!nicknameRegex.test(cleanNickname)) {
         showAlert("Geçersiz Karakter", "İsminde boşluk veya özel semboller (!, @, vs.) kullanamazsın.");
@@ -148,7 +179,6 @@ export default function AuthScreen() {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, cleanEmail, password);
       } else {
-        // 🚀 1. ÖNCE NICKNAME KONTROLÜ (Hesap açmadan önce)
         const usersRef = collection(db, "users");
         const q = query(usersRef, where("nickname", "==", cleanNickname));
         const querySnapshot = await getDocs(q);
@@ -156,10 +186,9 @@ export default function AuthScreen() {
         if (!querySnapshot.empty) {
           showAlert("Bu Koltuk Dolu!", "Bu nickname daha önce alınmış. Lütfen başka bir isim dene.");
           setLoading(false);
-          return; // İsim doluysa işlemi durdur, hesap falan açma!
+          return;
         }
 
-        // 🚀 2. İSİM BOŞTAYSA HESABI AÇ VE KAYDET
         const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
         const user = userCredential.user;
         await updateProfile(user, { displayName: cleanNickname });
@@ -196,7 +225,6 @@ export default function AuthScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
       
-      {/*CUSTOM ALERT MODAL */}
       <Modal visible={alertVisible} 
       transparent
        animationType="fade"
@@ -225,7 +253,7 @@ export default function AuthScreen() {
           <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
             <View style={styles.content}>
               
-              {/* 🚀 BURASI Animated.View OLARAK DEĞİŞTİRİLDİ */}
+              {/* 🚀 LOGO ARTIK ANİMATİON İLE KÜÇÜLÜYOR */}
               <Animated.View style={[styles.logoContainer, { height: logoAnimHeight, marginBottom: logoAnimMargin }]}>
                 <Image source={require('../../assets/homeLogo.png')} style={styles.logoImage} resizeMode="contain" />
               </Animated.View>
@@ -238,37 +266,37 @@ export default function AuthScreen() {
               <View style={styles.formContainer}>
                 {!isLogin && (
                   <View style={styles.inputWrapper}>
-                    <Ionicons name="person-outline" size={20} color={theme.pink} />
+                    <Ionicons name="person-outline" size={18} color={theme.pink} />
                     <TextInput 
                       style={styles.input} 
                       placeholder="Nickname" 
                       placeholderTextColor={theme.subText} 
                       value={nickname} 
                       onChangeText={setNickname} 
-                      autoCapitalize="none" // 🚀 Kullanıcı yazarken ilk harfi zorla büyütmesin
-                      autoCorrect={false}   // 🚀 Klavyenin kelime düzeltmesini engeller
+                      autoCapitalize="none"
+                      autoCorrect={false}
                     />
                   </View>
                 )}
 
                 <View style={styles.inputWrapper}>
-                  <Ionicons name="mail-outline" size={20} color={theme.pink} />
+                  <Ionicons name="mail-outline" size={18} color={theme.pink} />
                  <TextInput 
                     style={styles.input} 
                     placeholder="E-posta" 
                     placeholderTextColor={theme.subText} 
                     value={email} 
-                    onChangeText={(text) => setEmail(text.replace(/\s/g, ''))} // 🚀 Anında boşluk silme eklendi
+                    onChangeText={(text) => setEmail(text.replace(/\s/g, ''))} 
                     autoCapitalize="none" 
                     keyboardType="email-address" 
                   />
                 </View>
 
                 <View style={styles.inputWrapper}>
-                  <Ionicons name="lock-closed-outline" size={20} color={theme.pink} />
+                  <Ionicons name="lock-closed-outline" size={18} color={theme.pink} />
                   <TextInput style={styles.input} placeholder="Şifre" placeholderTextColor={theme.subText} secureTextEntry={!showPassword} value={password} onChangeText={setPassword} />
                   <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                    <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={theme.subText} />
+                    <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={18} color={theme.subText} />
                   </TouchableOpacity>
                 </View>
 
@@ -285,9 +313,21 @@ export default function AuthScreen() {
                 </LinearGradient>
               </TouchableOpacity>
 
+              <View style={styles.dividerContainer}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>veya</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <TouchableOpacity style={styles.guestButton} onPress={handleGuestLogin} activeOpacity={0.7} disabled={loading}>
+                <Ionicons name="game-controller" size={20} color={theme.pink} style={styles.guestIcon} />
+                <Text style={styles.guestButtonText}>Misafir Olarak Dene</Text>
+              </TouchableOpacity>
+
               <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={styles.footerLink}>
                 <Text style={styles.footerText}>{isLogin ? 'Hesabın yok mu? ' : 'Zaten üye misin? '}<Text style={styles.footerLinkBold}>{isLogin ? 'Kayıt Ol' : 'Giriş Yap'}</Text></Text>
               </TouchableOpacity>
+
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -297,7 +337,6 @@ export default function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
-  // --- ANA KONTEYNER VE ARKA PLAN ---
   container: { 
     flex: 1, 
     backgroundColor: theme.white 
@@ -312,105 +351,138 @@ const styles = StyleSheet.create({
     backgroundColor: theme.orange, 
     opacity: 0.15 
   },
-
-  // --- İÇERİK YAPISI ---
   content: { 
     flex: 1, 
     paddingHorizontal: 28, 
-    paddingBottom: 30, 
+    paddingTop: 10,
+    paddingBottom: 15, 
     alignItems: 'center', 
     justifyContent: 'center' 
   },
-  logoContainer: { 
-    width: width * 0.8, 
-    // 🚀 DİNAMİK OLACAĞI İÇİN BURADAKİ height VE marginBottom KALDIRILDI
+  // 🚀 LOGO KÜÇÜLTÜLDÜ VE BOŞLUĞU AZALTILDI
+ logoContainer: { 
+    width: width * 0.75, 
   },
   logoImage: { 
     width: '100%', 
     height: '100%' 
   },
-
-  // --- METİN GRUPLARI ---
+  // 🚀 METİNLER TIRAŞLANDI
   headerTextGroup: { 
     width: '100%', 
-    marginBottom: 30, 
+    marginBottom: 20, 
     alignItems: 'center' 
   },
   mainTitle: { 
-    fontSize: 32, 
+    fontSize: 28, 
     fontWeight: '900', 
     color: '#424242', 
-    marginBottom: 8 
+    marginBottom: 4 
   },
   subTitle: { 
-    fontSize: 15, 
+    fontSize: 14, 
     color: theme.subText, 
     textAlign: 'center', 
     fontWeight: '500' 
   },
-
-  // --- FORM VE GİRDİ ALANLARI ---
   formContainer: { 
     width: '100%', 
-    marginBottom: 25 
+    marginBottom: 15 
   },
+  // 🚀 İNPUT YÜKSEKLİKLERİ VE BOŞLUKLARI KÜÇÜLTÜLDÜ
   inputWrapper: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     backgroundColor: theme.inputBg, 
-    height: 62, 
-    borderRadius: 20, 
-    paddingHorizontal: 20, 
-    marginBottom: 16, 
+    height: 54, 
+    borderRadius: 18, 
+    paddingHorizontal: 18, 
+    marginBottom: 12, 
     borderWidth: 1.5, 
     borderColor: theme.border 
   },
   input: { 
     flex: 1, 
-    fontSize: 16, 
+    fontSize: 15, 
     color: theme.deepText, 
     fontWeight: '600', 
-    marginLeft: 12 
+    marginLeft: 10 
   },
-
-  // --- ŞİFRE UNUTTUM VE BUTONLAR ---
   forgotPass: { 
     alignSelf: 'flex-end', 
-    marginTop: -4, 
+    marginTop: -2, 
     paddingVertical: 5 
   },
   forgotPassText: { 
     color: theme.pink, 
     fontWeight: '700', 
-    fontSize: 14 
+    fontSize: 13 
   },
   buttonShadow: { 
     width: '100%', 
     shadowColor: theme.pink, 
     shadowOpacity: 0.4, 
-    shadowRadius: 12, 
-    shadowOffset: { width: 0, height: 6 }, 
-    elevation: 10 
+    shadowRadius: 10, 
+    shadowOffset: { width: 0, height: 4 }, 
+    elevation: 8 
   },
+  // 🚀 ANA BUTON YÜKSEKLİĞİ KÜÇÜLTÜLDÜ
   mainButton: { 
-    height: 64, 
-    borderRadius: 22, 
+    height: 56, 
+    borderRadius: 18, 
     justifyContent: 'center', 
     alignItems: 'center' 
   },
   buttonText: { 
     color: 'white', 
-    fontSize: 18, 
+    fontSize: 17, 
     fontWeight: '800' 
   },
-
-  // --- FOOTER (ALT KISIM) ---
+  // 🚀 VEYA ÇİZGİSİ BOŞLUKLARI AZALTILDI
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: 15,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: theme.border,
+  },
+  dividerText: {
+    paddingHorizontal: 14,
+    color: theme.subText,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // 🚀 MİSAFİR BUTONU KÜÇÜLTÜLDÜ
+  guestButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: 54,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: theme.pink + '40',
+    backgroundColor: theme.pink + '0A',
+  },
+  guestIcon: {
+    marginRight: 8,
+  },
+  guestButtonText: {
+    fontSize: 15,
+    color: theme.pink,
+    fontWeight: '700',
+  },
+  // 🚀 FOOTER BOŞLUĞU AZALTILDI
   footerLink: { 
-    marginTop: 25, 
+    marginTop: 20, 
     padding: 10 
   },
   footerText: { 
-    fontSize: 15, 
+    fontSize: 14, 
     color: theme.subText, 
     fontWeight: '500' 
   },
@@ -418,8 +490,6 @@ const styles = StyleSheet.create({
     color: theme.pink, 
     fontWeight: '800' 
   },
-
-  // 🚀 ALERT (UYARI) MODAL STİLLERİ
   modalOverlay: { 
     flex: 1, 
     backgroundColor: 'rgba(0,0,0,0.5)', 

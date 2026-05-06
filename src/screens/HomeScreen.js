@@ -28,6 +28,7 @@ export default function HomeScreen({ navigation }) {
   const [isBoxOpened, setIsBoxOpened] = useState(false);
   const [coins, setCoins] = useState(0);
   const [diamonds, setDiamonds] = useState(0);
+  const [guestMatchesLeft, setGuestMatchesLeft] = useState(null); // null = bilinmiyor / yükleniyor
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scalePress = useRef(new Animated.Value(1)).current;
 
@@ -80,6 +81,10 @@ useEffect(() => {
             setIsBoxOpened(data.isBoxOpened || false);
             setCoins(data.coins || 0);
             setDiamonds(data.diamonds || 0);
+            // Sadece misafir kullanıcılar için anlamlı; üyeler için undefined.
+            setGuestMatchesLeft(
+              typeof data.guestMatchesLeft === 'number' ? data.guestMatchesLeft : null
+            );
           }
         },
         // 🚀 İŞTE EKLENEN KISIM: Çıkış yaparken hatayı yutar ve kırmızı ekranı önler
@@ -97,7 +102,20 @@ useEffect(() => {
   const handleNavigateWithAvatar = (targetScreen, additionalParams = {}) => {
     playHomeSound('tap');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
+
+    // Misafir hak kontrolü: hak biten misafirleri oyun ekranlarına bırakmadan
+    // doğrudan GuestLimitScreen'e yönlendir.
+    const user = auth.currentUser;
+    const isGuest = user?.isAnonymous;
+    const isGameScreen =
+      targetScreen === 'RandomMatchScreen' ||
+      targetScreen === 'LobbyScreen' ||
+      targetScreen === 'JoinRoom';
+    if (isGuest && isGameScreen && guestMatchesLeft !== null && guestMatchesLeft <= 0) {
+      navigation.navigate('GuestLimitScreen');
+      return;
+    }
+
     navigation.navigate('AvatarScreen', {
       nextScreen: targetScreen,
       extraParams: additionalParams,
