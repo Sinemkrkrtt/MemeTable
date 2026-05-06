@@ -228,21 +228,31 @@ useEffect(() => {
         </View>
       </View>
 
-      <View style={styles.questCard}>
-        <View style={styles.questMainRow}>
-          <View style={[styles.questIconBox, { backgroundColor: '#FFF0F5' }]}>
-            <Ionicons name="heart" size={24} color={palet.vibrant} />
+      <View style={styles.questMainRow}>
+          <View style={[styles.questIconBox, { backgroundColor: isBoxOpened ? '#F3F4F6' : '#FFF0F5' }]}>
+            <Ionicons name="heart" size={24} color={isBoxOpened ? palet.gray : palet.vibrant} />
           </View>
           <View style={styles.questContent}>
-            <Text style={styles.questText}>3 Maç Kazan, Hediyeni Kap!</Text>
+            <Text style={[styles.questText, isBoxOpened && { color: palet.gray }]}>
+              {isBoxOpened ? "Görev Tamamlandı" : "3 Maç Kazan, Hediyeni Kap!"}
+            </Text>
             <View style={styles.progressRow}>
               <View style={styles.progressTrack}>
-                <LinearGradient 
-                  colors={[palet.vibrant, palet.orange]} 
-                  style={[styles.progressFill, { width: `${(Math.min(localHearts, 3) / 3) * 100}%` }]} 
-                />
+                {isBoxOpened ? (
+                  // 🚀 Kutu açıldıysa: Gri ve %100 dolu bar
+                  <View style={[styles.progressFill, { width: '100%', backgroundColor: palet.gray }]} />
+                ) : (
+                  // 🚀 Kutu açılmadıysa: Normal ilerleme
+                  <LinearGradient 
+                    colors={[palet.vibrant, palet.orange]} 
+                    style={[styles.progressFill, { width: `${(Math.min(localHearts, 3) / 3) * 100}%` }]} 
+                  />
+                )}
               </View>
-              <Text style={styles.currentProgressText}>{Math.min(localHearts, 3)}/3</Text>
+              {/* Kutu açıldıysa yazıyı da gri yap ve 3/3 olarak sabitle */}
+              <Text style={[styles.currentProgressText, isBoxOpened && { color: palet.gray }]}>
+                {isBoxOpened ? '3/3' : `${Math.min(localHearts, 3)}/3`}
+              </Text>
             </View>
           </View>
           
@@ -269,8 +279,7 @@ useEffect(() => {
             )}
           </View>
         </View>
-      </View>
-
+        
       <Modal visible={isModalVisible} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
           <Animated.View style={[styles.lightRaysContainer, { opacity: rewardOpacity, transform: [{ rotate: spin }] }]}>

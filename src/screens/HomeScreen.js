@@ -63,7 +63,6 @@ useEffect(() => {
     };
     configureAudio();
 
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     Animated.timing(fadeAnim, { toValue: 1, duration: 1000, useNativeDriver: true }).start();
     
     const user = auth.currentUser;
@@ -98,6 +97,14 @@ useEffect(() => {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  // Home ekranı her odaklandığında dikey kilitle — başka ekran (ör. RoomScreen)
+  // yatay kullanıyor olabilir, geri dönünce dikeye sıfırlasın.
+  useFocusEffect(
+    useCallback(() => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    }, [])
+  );
 
   const handleNavigateWithAvatar = (targetScreen, additionalParams = {}) => {
     playHomeSound('tap');

@@ -90,8 +90,26 @@ export const styles = StyleSheet.create({
   bottomPlayer: { 
     bottom: -35 
   },
-  avatarContainer: { 
-    alignItems: 'center' 
+  avatarContainer: {
+    alignItems: 'center'
+  },
+  voteCheckBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#22C55E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    zIndex: 10,
   },
   avatar: { 
     width: 68, 

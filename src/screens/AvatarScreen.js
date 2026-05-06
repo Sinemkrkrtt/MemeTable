@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions, StatusB
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { StackActions } from '@react-navigation/native'; 
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { Image } from 'expo-image';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
@@ -68,11 +68,22 @@ const handleConfirm = async () => {
   if (user) {
     try {
       const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, { avatarSeed: selected });
+      // setDoc + merge: doc yoksa oluştur, varsa sadece avatarSeed'i güncelle.
+      // uid/nickname dahil etmek hem create rule'unu hem update rule'unu (uid karşılaştırması)
+      // tatmin eder; merge sayesinde mevcut nickname override edilmez.
+      await setDoc(
+        userRef,
+        {
+          uid: user.uid,
+          nickname: user.displayName || 'Oyuncu',
+          avatarSeed: selected,
+        },
+        { merge: true }
+      );
     } catch (error) {
       console.log("Avatar kaydedilemedi:", error);
       alert("Avatar kaydedilirken bir hata oluştu. İnternetini kontrol et.");
-      setIsSaving(false); 
+      setIsSaving(false);
       return; // 🚀 EKLENDİ: Hata varsa aşağıya inip SAYFAYI DEĞİŞTİRME! İşlemi kes.
     }
   }
