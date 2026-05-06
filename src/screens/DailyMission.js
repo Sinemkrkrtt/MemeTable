@@ -1,39 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Modal, Animated, StyleSheet, Dimensions, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, Animated, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { auth } from '../services/firebase';
-import { api, describeApiError } from '../services/api';
+import { doc, updateDoc, increment, getDoc } from 'firebase/firestore';
+import { db, auth } from '../services/firebase';
 import { Image } from 'expo-image';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 
 const { width } = Dimensions.get('window');
 
-// weight = bağıl olasılık ağırlığı. Toplam: 3+1+3+5+1 = 13
-//   YAYGIN coin     → 5/13 ≈ %38
-//   NADİR joker1    → 3/13 ≈ %23
-//   NADİR joker3    → 3/13 ≈ %23
-//   DESTANSI joker2 → 1/13 ≈ %8
-//   EFSANEVİ diamond→ 1/13 ≈ %8
 const REWARDS = [
-  { id: 'joker1', weight: 3, type: 'joker', title: 'TEKLİ DEĞİŞİM', desc: '1 Kartı Yenile', icon: 'refresh', rarity: 'NADİR', color: '#FF8A00' },
-  { id: 'joker2', weight: 1, type: 'joker', title: 'DESTE TAKASI', desc: 'Tüm Eli Yenile', icon: 'layers', rarity: 'DESTANSI', color: '#FF00D6' },
-  { id: 'joker3', weight: 3, type: 'joker', title: 'BUZ SAATİ', desc: 'Süreyi Dondur', icon: 'snow', rarity: 'NADİR', color: '#00A6FF' },
-  { id: 'coin',    weight: 5, type: 'currency', title: 'COIN PAKETİ', desc: '500 Altın Kazandın!', icon: 'logo-bitcoin', rarity: 'YAYGIN', color: '#FFD700' },
-  { id: 'diamond', weight: 1, type: 'currency', title: 'ELMAS KESESİ', desc: '10 Elmas Kazandın!', icon: 'diamond', rarity: 'EFSANEVİ', color: '#00EEFF' },
+  { id: 'joker1', type: 'joker', title: 'TEKLİ DEĞİŞİM', desc: '1 Kartı Yenile', icon: 'refresh', rarity: 'NADİR', color: '#FF8A00' },
+  { id: 'joker2', type: 'joker', title: 'DESTE TAKASI', desc: 'Tüm Eli Yenile', icon: 'layers', rarity: 'DESTANSI', color: '#FF00D6' },
+  { id: 'joker3', type: 'joker', title: 'BUZ SAATİ', desc: 'Süreyi Dondur', icon: 'snow', rarity: 'NADİR', color: '#00A6FF' },
+  { id: 'coin', type: 'currency', title: 'COIN PAKETİ', desc: '500 Altın Kazandın!', icon: 'logo-bitcoin', rarity: 'YAYGIN', color: '#FFD700' },
+  { id: 'diamond', type: 'currency', title: 'ELMAS KESESİ', desc: '10 Elmas Kazandın!', icon: 'diamond', rarity: 'EFSANEVİ', color: '#00EEFF' },
 ];
-
-const pickWeightedReward = () => {
-  const total = REWARDS.reduce((sum, r) => sum + (r.weight ?? 1), 0);
-  let roll = Math.random() * total;
-  for (const reward of REWARDS) {
-    roll -= (reward.weight ?? 1);
-    if (roll < 0) return reward;
-  }
-  // Floating-point edge — son ödüle düş
-  return REWARDS[REWARDS.length - 1];
-};
 
 export default function DailyMission({ wonHearts, onRefreshUser }) {
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -65,44 +48,58 @@ export default function DailyMission({ wonHearts, onRefreshUser }) {
     }
   };
 
-  // Audio kurulumu yalnızca mount'ta — rotation kontrolü ayrı useEffect'te (cleanup'lı)
   useEffect(() => {
     const setupAudio = async () => {
-      try {
-        await setAudioModeAsync({ playsInSilentMode: true });
-      } catch (error) {
-        console.log("Ses ayarı yapılamadı:", error);
-      }
+        try {
+            await setAudioModeAsync({ playsInSilentMode: true });
+        } catch (error) {
+            console.log("Ses ayarı yapılamadı:", error);
+        }
     };
     setupAudio();
-  }, []);
 
-  // Mount'ta sunucudan reset isteği gönder — server tarihi otoritedir.
+    if (isModalVisible) {
+      Animated.loop(Animated.timing(rotateAnim, { toValue: 1, duration: 12000, useNativeDriver: true })).start();
+    }
+  }, [isModalVisible]);
+
+// 🚀 DÜZELTİLDİ: Sadece bileşen yüklendiğinde 1 kere kontrol et.
   useEffect(() => {
     const checkDailyReset = async () => {
       const user = auth.currentUser;
       if (!user) return;
-
+      
       try {
-        const result = await api.resetDailyIfNeeded({});
-        const { wonHearts: serverHearts, isBoxOpened: serverBox } = result?.data || {};
-        if (typeof serverHearts === 'number') setLocalHearts(serverHearts);
-        if (typeof serverBox === 'boolean') setIsBoxOpened(serverBox);
-        if (onRefreshUser) onRefreshUser();
+        const userRef = doc(db, 'users', user.uid);
+        const snap = await getDoc(userRef);
+        
+        if (snap.exists()) {
+          const data = snap.data();
+          const today = new Date().toISOString().split('T')[0]; 
+
+          if (data.lastMissionDate !== today) {
+            await updateDoc(userRef, {
+              wonHearts: 0,
+              isBoxOpened: false,
+              lastMissionDate: today
+            });
+            setLocalHearts(0);
+            setIsBoxOpened(false);
+            if (onRefreshUser) onRefreshUser();
+          } else {
+            // Eğer Firebase'deki veri, prop olarak gelenden güncelse state'i güncelle.
+            // (wonHearts prop olarak geliyorsa onu da kullanabilirsin, ama Firebase güvenlidir.)
+            setLocalHearts(data.wonHearts || 0); 
+            setIsBoxOpened(data.isBoxOpened || false);
+          }
+        }
       } catch (error) {
-        console.log("Günlük görev sıfırlama kontrolünde hata:", error?.code);
-        // Sunucuya ulaşamadıysak prop'tan ne geldiyse onu kullan (offline fallback)
+        console.log("Günlük görev sıfırlama kontrolünde hata:", error.code);
       }
     };
-
+    
     checkDailyReset();
-  }, []);
-
-  // wonHearts prop'u parent'tan (HomeScreen onSnapshot) güncellenince local state'i senkronize et.
-  // Aksi halde RoomScreen'de bir maç kazanıldığında progress bar burada stale kalır.
-  useEffect(() => {
-    setLocalHearts(wonHearts);
-  }, [wonHearts]);
+  }, []); // 🚀 BOŞ ARRAY
 
 
 useEffect(() => {
@@ -147,7 +144,7 @@ useEffect(() => {
     playRevealSound();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    const randomReward = pickWeightedReward();
+    const randomReward = REWARDS[Math.floor(Math.random() * REWARDS.length)];
     setCurrentReward(randomReward);
     setIsModalVisible(true);
     
@@ -163,40 +160,51 @@ useEffect(() => {
   
   const handleClaimReward = async () => {
     if (isClaiming) return;
-
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert('Hata', 'Lütfen önce giriş yap.');
-      return;
-    }
-
     setIsClaiming(true);
+    
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    try {
-      // Server seçer, server yazar — client sadece sonucunu öğrenir.
-      const result = await api.claimDailyMission({});
-      const reward = result?.data?.reward;
-      if (reward) {
-        // UI'ı server'dan gelen gerçek ödüle göre senkronize et
-        const matched = REWARDS.find(r => r.id === reward.id);
-        if (matched) setCurrentReward(matched);
-      }
-      setIsBoxOpened(true);
-      setLocalHearts(0);
+    const user = auth.currentUser;
+    if (user) {
+      const userRef = doc(db, "users", user.uid);
+      try {
+        const today = new Date().toISOString().split('T')[0]; 
+        
+        let updateData = { 
+          wonHearts: 0, 
+          isBoxOpened: true, 
+          lastMissionDate: today
+        };
 
-      if (onRefreshUser) onRefreshUser();
+        if (currentReward.type === 'joker') {
+          let dbField = 'joker_skip'; 
+          if (currentReward.id === 'joker2') dbField = 'joker_double';
+          if (currentReward.id === 'joker3') dbField = 'joker_freeze'; 
+          
+          updateData[dbField] = increment(1);
+        } else if (currentReward.id === 'coin') {
+          updateData[`coins`] = increment(500);
+        } else if (currentReward.id === 'diamond') {
+          updateData[`diamonds`] = increment(10);
+        }
 
-      // setIsClaiming(false) yalnızca animation bittikten sonra — kullanıcı modal hâlâ
-      // açıkken butona tekrar basıp çift ödül alamasın.
-      Animated.timing(rewardOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
-        setIsModalVisible(false);
+       await updateDoc(userRef, updateData);
+        setIsBoxOpened(true);
+        setLocalHearts(0);
+        
+        if (onRefreshUser) onRefreshUser();
+        
+        // 🚀 MODAL KAPANIRKEN ANİMASYONLARI DA DURDUR/SIFIRLA
+        Animated.timing(rewardOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
+             setIsModalVisible(false);
+             setIsClaiming(false);
+        });
+
+      } catch (error) {
+        console.error("Hediye işlenirken hata:", error);
+      } finally {
         setIsClaiming(false);
-      });
-    } catch (error) {
-      console.error("Hediye işlenirken hata:", error);
-      setIsClaiming(false);
-      Alert.alert('Hata', describeApiError(error));
+      }
     }
   };
 

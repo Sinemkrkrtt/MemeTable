@@ -17,20 +17,41 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
-import { api, describeApiError } from '../services/api';
-import { useRewardedAd, TestIds } from 'react-native-google-mobile-ads';
 import {
   initConnection,
+  endConnection,
   fetchProducts,
   requestPurchase,
   finishTransaction,
-  endConnection,
   purchaseUpdatedListener,
   purchaseErrorListener,
+  getAvailablePurchases,
 } from 'react-native-iap';
+import { api, describeApiError } from '../services/api';
+import mobileAds, {
+  RewardedAd,
+  RewardedAdEventType,
+  AdEventType,
+  TestIds,
+} from 'react-native-google-mobile-ads';
 
+const PRODUCT_SKUS = [
+  'com.sinem.memetable.app.diamonds_50',
+  'com.sinem.memetable.app.diamonds_250',
+];
+
+// Geliştirme/sandbox: Google'ın resmi test rewarded ad unit ID'si.
+// Production'a çıkarken AdMob'dan kendi unit ID'lerinle değiştir.
+const REWARDED_AD_UNIT_ID = __DEV__
+  ? TestIds.REWARDED
+  : Platform.select({
+      ios: 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX',
+      android: 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX',
+    });
+
+const REWARD_COIN_AMOUNT = 50;
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 55) / 2;
@@ -68,8 +89,8 @@ const STORE_DATA = {
     { id: 'c2', name: 'Meme Zulası', price: 40, type: 'diamond', amount: 5000, icon: 'piggy-bank', iconFamily: 'FontAwesome5', color: palet.salmon, badge: 'EN ÇOK SATAN' },
   ],
   diamonds: [
-    { id: 'd1', sku: 'com.sinem.memetable.app.diamonds_50', name: 'Avuç İçi', price: '₺29.99', type: 'real', amount: 50, icon: 'gem', iconFamily: 'FontAwesome5', color: '#00D2FF' },
-    { id: 'd2', sku: 'com.sinem.memetable.app.diamonds_250', name: 'Kral Sandığı', price: '₺99.99', type: 'real', amount: 250, icon: 'crown', iconFamily: 'FontAwesome5', color: palet.pink, badge: 'AVANTAJLI' },
+    { id: 'd1', productId: 'com.sinem.memetable.app.diamonds_50',  name: 'Avuç İçi',     price: '₺29.99',  type: 'real', amount: 50,  icon: 'gem',   iconFamily: 'FontAwesome5', color: '#00D2FF' },
+    { id: 'd2', productId: 'com.sinem.memetable.app.diamonds_250', name: 'Kral Sandığı', price: '₺129.99', type: 'real', amount: 250, icon: 'crown', iconFamily: 'FontAwesome5', color: palet.pink, badge: 'AVANTAJLI' },
   ]
 };
 
@@ -81,7 +102,14 @@ export default function MarketScreen({ navigation }) {
   const [userDiamonds, setUserDiamonds] = useState(0);
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState({ title: '', message: '', buttons: [] });
-  const processedTxRef = useRef(new Set());
+
+  // Aynı transaction için listener'ın çift fire'ını engellemek için in-memory dedupe.
+  const processedTxIdsRef = useRef(new Set());
+
+  // Rewarded ad
+  const rewardedAdRef = useRef(null);
+  const [adLoaded, setAdLoaded] = useState(false);
+  const [adLoading, setAdLoading] = useState(false);
 
   let [fontsLoaded] = useFonts({
     Nunito_600SemiBold,
@@ -94,73 +122,6 @@ export default function MarketScreen({ navigation }) {
   const successSound = useAudioPlayer(require('../../assets/sounds/cha-ching.mp3'));
   const errorSound = useAudioPlayer(require('../../assets/sounds/error.mp3'));
 
-  // ⚠️ PRODUCTION'A ÇIKMADAN ÖNCE: AdMob'tan gerçek Rewarded Ad Unit ID'sini buraya yapıştır.
-  // Aksi halde release sürümünde ödüllü reklam hiç yüklenmez ve kullanıcılar ödül kazanamaz.
-  const adUnitId = __DEV__ ? TestIds.REWARDED : 'ca-app-pub-xxxxxxxxxxxxx';
-  const {
-    isLoaded: adLoaded,
-    isClosed: adClosed,
-    isEarnedReward,
-    load: loadAd,
-    show: showAd,
-    error: adError,
-  } = useRewardedAd(adUnitId, { requestNonPersonalizedAdsOnly: true });
-  const rewardGrantedRef = useRef(false);
-
-  useEffect(() => {
-    loadAd();
-  }, [loadAd]);
-
-  useEffect(() => {
-    if (adClosed) {
-      rewardGrantedRef.current = false;
-      loadAd();
-    }
-  }, [adClosed, loadAd]);
-
-  useEffect(() => {
-    if (isEarnedReward && !rewardGrantedRef.current) {
-      rewardGrantedRef.current = true;
-      handleRewardSuccess();
-    }
-  }, [isEarnedReward]);
-
-  useEffect(() => {
-    if (adError) {
-      console.warn('Reklam yükleme hatası:', adError);
-    }
-  }, [adError]);
-
-  const showRewardAd = () => {
-    if (adLoaded) {
-      showAd();
-    } else {
-      playSound('error');
-      showAlert('Reklam Hazır Değil', 'Reklam henüz yüklenmedi, lütfen birkaç saniye sonra tekrar dene.');
-      loadAd();
-    }
-  };
-
-
-  const handleRewardSuccess = async () => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    try {
-      // Aynı reklam tekrar credit edilmesin diye unique id
-      const adRewardId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      const result = await api.claimRewardAd({ adRewardId });
-      const amount = result?.data?.coins ?? 50;
-      playSound('success');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showAlert("Tebrikler!", `Reklamı izledin, +${amount} Coin kazandın.`);
-    } catch (error) {
-      console.error("Reklam ödülü hatası:", error);
-      showAlert("Hata", describeApiError(error));
-    }
-  };
-
-  
   const playSound = (type) => {
     try {
       if (type === 'click') {
@@ -189,116 +150,205 @@ export default function MarketScreen({ navigation }) {
     configureAudio();
 
     const user = auth.currentUser;
-    if (!user) return;
-
-    const userRef = doc(db, 'users', user.uid);
-    const unsubscribe = onSnapshot(
-      userRef, 
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setUserCoins(data.coins || 0);
-          setUserDiamonds(data.diamonds || 0);
-        }
-      },
-      (error) => {
-        console.log("Market dinleyicisi yetkisi düştü (Normal durum):", error.code);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    let updateSub;
-    let errorSub;
-
-    const initIAP = async () => {
-      try {
-        await initConnection();
-        if (cancelled) return;
-
-        const skus = STORE_DATA.diamonds.map(d => d.sku).filter(Boolean);
-        if (skus.length > 0) {
-          const products = await fetchProducts({ skus, type: 'in-app' });
-          if (cancelled) return;
-          console.log('IAP ürünleri:', products);
-        }
-
-        updateSub = purchaseUpdatedListener(async (purchase) => {
-          const token = purchase?.purchaseToken ?? purchase?.id;
-          if (!token) return;
-
-          const txId = purchase?.id ?? token;
-          if (processedTxRef.current.has(txId)) {
-            try { await finishTransaction({ purchase, isConsumable: true }); } catch {}
-            return;
-          }
-          processedTxRef.current.add(txId);
-
-          const sku = purchase?.productId
-            ?? (Array.isArray(purchase?.productIds) ? purchase.productIds[0] : null)
-            ?? (Array.isArray(purchase?.ids) ? purchase.ids[0] : null);
-          const item = STORE_DATA.diamonds.find(d => d.sku === sku);
-          const user = auth.currentUser;
-
-          try {
-            if (user && item) {
-              // Server-side receipt doğrulama + diamond yansıtma
-              await api.validatePurchase({
-                platform: Platform.OS,
-                productId: sku,
-                transactionId: purchase.id ?? token,
-                receipt: purchase.transactionReceipt ?? purchase.purchaseToken,
-                purchaseToken: purchase.purchaseToken,
-              });
-              await finishTransaction({ purchase, isConsumable: true });
-              playSound('success');
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              setModalVisible(false);
-              showAlert('Başarılı!', `+${item.amount} Elmas hesabına eklendi.`);
-            } else {
-              // Bilinmeyen ürün veya auth yok — Apple replay etmesin diye yine de finish
-              await finishTransaction({ purchase, isConsumable: true });
+    const userRef = user ? doc(db, 'users', user.uid) : null;
+    const unsubscribe = userRef
+      ? onSnapshot(
+          userRef,
+          (docSnap) => {
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              setUserCoins(data.coins || 0);
+              setUserDiamonds(data.diamonds || 0);
             }
-          } catch (e) {
-            console.warn('IAP doğrulama hatası:', e);
-            processedTxRef.current.delete(txId);
-            showAlert('Hata', describeApiError(e));
-          } finally {
-            setIsPurchasing(false);
+          },
+          (error) => {
+            console.log("Market dinleyicisi yetkisi düştü (Normal durum):", error.code);
           }
-        });
+        )
+      : null;
 
-        errorSub = purchaseErrorListener((error) => {
-          console.warn('Satın alma hatası:', error);
-          setIsPurchasing(false);
-          if (error?.code !== 'E_USER_CANCELLED') {
-            playSound('error');
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            showAlert('Hata', 'İşlem sırasında bir sorun oluştu.');
+    let purchaseUpdateSub = null;
+    let purchaseErrorSub = null;
+
+    // SANDBOX/DEV: backend doğrulaması yok — başarılı satın alımda direkt
+    // Firestore'a elmas yaz. Production öncesi JWS verify backend'i geri açılmalı.
+    const processPurchase = async (purchase, { silent = false } = {}) => {
+      const txId = purchase?.id;
+      // v15 listener aynı tx için 2+ kez tetikleyebiliyor; çiftleri atla.
+      if (txId && processedTxIdsRef.current.has(txId)) {
+        if (!silent) setIsPurchasing(false);
+        return;
+      }
+      if (txId) processedTxIdsRef.current.add(txId);
+
+      try {
+        const item = STORE_DATA.diamonds.find((d) => d.productId === purchase.productId);
+        if (!item) throw new Error(`Bilinmeyen ürün: ${purchase.productId}`);
+
+        if (!userRef) throw new Error('Oturum yok.');
+
+        await updateDoc(userRef, { diamonds: increment(item.amount) });
+        await finishTransaction({ purchase, isConsumable: true });
+
+        if (silent) return;
+
+        playSound('success');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showAlert('Tebrikler!', `+${item.amount} Elmas hesabına eklendi.`);
+        setModalVisible(false);
+      } catch (e) {
+        console.log('processPurchase hatası:', e);
+        // Silent cleanup'ta hata olsa bile finishTransaction çağır;
+        // aksi halde bozuk pending tx kuyrukta kalır ve aynı SKU yeniden satın alınamaz.
+        if (silent) {
+          try {
+            await finishTransaction({ purchase, isConsumable: true });
+          } catch (finishErr) {
+            console.log('Cleanup finishTransaction hatası:', finishErr?.message || finishErr);
           }
-        });
-
-        if (cancelled) {
-          updateSub?.remove();
-          errorSub?.remove();
+          return;
         }
-      } catch (err) {
-        console.warn('IAP başlatma hatası:', err);
+        playSound('error');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        showAlert('Hata', e?.message || 'İşlem tamamlanamadı.');
+      } finally {
+        setIsPurchasing(false);
       }
     };
 
-    initIAP();
+    const setupIAP = async () => {
+      try {
+        await initConnection();
+        await fetchProducts({ skus: PRODUCT_SKUS, type: 'in-app' });
+      } catch (e) {
+        console.log('IAP init hatası:', e?.message || e);
+      }
+
+      purchaseUpdateSub = purchaseUpdatedListener((purchase) => {
+        processPurchase(purchase);
+      });
+
+      purchaseErrorSub = purchaseErrorListener((error) => {
+        console.log('IAP hata:', error);
+        setIsPurchasing(false);
+        if (error?.code === 'E_USER_CANCELLED') return;
+        if (error?.code === 'duplicate-purchase') return; // pending akışıyla zaten temizleniyor
+        playSound('error');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        showAlert('Satın Alma Başarısız', error?.message || 'İşlem tamamlanamadı.');
+      });
+
+      // Açılışta kuyrukta asılı kalan transaction'ları temizle (sessiz işle).
+      try {
+        const pending = await getAvailablePurchases({
+          onlyIncludeActiveItemsIOS: false,
+        });
+        if (Array.isArray(pending) && pending.length > 0) {
+          console.log(`IAP: ${pending.length} bekleyen işlem temizleniyor.`);
+          for (const p of pending) {
+            // eslint-disable-next-line no-await-in-loop
+            await processPurchase(p, { silent: true });
+          }
+        }
+      } catch (e) {
+        console.log('getAvailablePurchases hatası:', e?.message || e);
+      }
+    };
+
+    setupIAP();
 
     return () => {
-      cancelled = true;
-      if (updateSub) updateSub.remove();
-      if (errorSub) errorSub.remove();
+      if (unsubscribe) unsubscribe();
+      if (purchaseUpdateSub) purchaseUpdateSub.remove();
+      if (purchaseErrorSub) purchaseErrorSub.remove();
       endConnection();
     };
   }, []);
+
+  // Rewarded ad setup
+  useEffect(() => {
+    let loadedSub = null;
+    let earnedSub = null;
+    let closedSub = null;
+    let errorSub = null;
+
+    const loadAd = () => {
+      if (adLoading) return;
+      setAdLoading(true);
+      const ad = RewardedAd.createForAdRequest(REWARDED_AD_UNIT_ID, {
+        requestNonPersonalizedAdsOnly: true,
+      });
+      rewardedAdRef.current = ad;
+
+      loadedSub = ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
+        setAdLoaded(true);
+        setAdLoading(false);
+      });
+
+      earnedSub = ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, async () => {
+        const user = auth.currentUser;
+        if (!user) return;
+        try {
+          const ref = doc(db, 'users', user.uid);
+          await updateDoc(ref, { coins: increment(REWARD_COIN_AMOUNT) });
+          playSound('success');
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showAlert('Tebrikler!', `+${REWARD_COIN_AMOUNT} Coin hesabına eklendi.`);
+        } catch (e) {
+          console.log('Reklam ödülü hatası:', e);
+          playSound('error');
+          showAlert('Hata', 'Ödül eklenemedi.');
+        }
+      });
+
+      // Reklam kapanınca veya hata olunca yeni reklam yükle.
+      const reload = () => {
+        setAdLoaded(false);
+        rewardedAdRef.current = null;
+        loadedSub?.();
+        earnedSub?.();
+        closedSub?.();
+        errorSub?.();
+        loadAd();
+      };
+      closedSub = ad.addAdEventListener(AdEventType.CLOSED, reload);
+      errorSub = ad.addAdEventListener(AdEventType.ERROR, (err) => {
+        console.log('Rewarded ad hatası:', err?.message || err);
+        setAdLoading(false);
+        setAdLoaded(false);
+      });
+
+      ad.load();
+    };
+
+    mobileAds()
+      .initialize()
+      .then(() => loadAd())
+      .catch((e) => console.log('mobileAds init hatası:', e?.message || e));
+
+    return () => {
+      loadedSub?.();
+      earnedSub?.();
+      closedSub?.();
+      errorSub?.();
+    };
+  }, []);
+
+  const showRewardedAd = () => {
+    playSound('click');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const ad = rewardedAdRef.current;
+    if (!adLoaded || !ad) {
+      showAlert('Reklam Hazır Değil', 'Reklam yükleniyor, birkaç saniye sonra tekrar dene.');
+      return;
+    }
+    try {
+      ad.show();
+    } catch (e) {
+      console.log('Rewarded show hatası:', e);
+      showAlert('Hata', 'Reklam gösterilemedi.');
+    }
+  };
 
   const showAlert = (title, message, buttons) => {
     setAlertConfig({
@@ -322,58 +372,64 @@ export default function MarketScreen({ navigation }) {
       return;
     }
 
+    const userRef = doc(db, 'users', user.uid);
+
     try {
       if (item.type === 'coin') {
-        // Joker satın alma (coin ile) — server-side
-        try {
-          await api.purchaseJokerWithCoins({ jokerId: item.id });
-          playSound('success');
+        if (userCoins >= item.price) {
+          await updateDoc(userRef, {
+            coins: increment(-item.price), 
+            [item.id]: increment(1)        
+          });
+          playSound('success'); 
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          showAlert("Başarılı!", `Tebrikler, ${item.name} envanterine eklendi.`);
+          showAlert("Başarılı!", `Tebrikler, ${item.name} envanterinize eklendi.`);
           setModalVisible(false);
-        } catch (err) {
-          playSound('error');
+        } else {
+          playSound('error'); 
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          showAlert("Hata", describeApiError(err));
+          showAlert("Yetersiz Bakiye", "Bunun için yeterli coininiz yok. Lütfen kasa doldurun.");
         }
-      }
+      } 
       else if (item.type === 'diamond') {
-        // Coin paketi (elmas ile) — server-side
-        try {
-          await api.purchaseCoinPack({ packId: item.id });
-          playSound('success');
+        if (userDiamonds >= item.price) {
+          await updateDoc(userRef, {
+            diamonds: increment(-item.price), 
+            coins: increment(item.amount)     
+          });
+          playSound('success'); 
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          showAlert("Kasa Doldu!", `Tebrikler, +${item.amount} Coin hesabına eklendi.`);
+          showAlert("Kasa Doldu!", `Tebrikler, +${item.amount} Coin hesabınıza eklendi.`);
           setModalVisible(false);
-        } catch (err) {
-          playSound('error');
+        } else {
+          playSound('error'); 
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          showAlert("Hata", describeApiError(err));
+          showAlert("Yetersiz Elmas", "Yeterli elmasınız yok. Lütfen premium elmas satın alın.");
         }
-      }
-      else if (item.type === 'real') {
-        if (!item.sku) {
-          playSound('error');
-          showAlert('Hata', 'Bu ürün şu anda satışta değil.');
+      } 
+     else if (item.type === 'real') {
+        if (!item.productId) {
+          showAlert('Hata', 'Ürün tanımlı değil.');
           setIsPurchasing(false);
           return;
         }
         try {
           await requestPurchase({
             request: {
-              ios: { sku: item.sku },
-              android: { skus: [item.sku] },
+              apple: { sku: item.productId },
+              google: { skus: [item.productId] },
             },
             type: 'in-app',
           });
-          // İşlemin tamamlanması ve isPurchasing bayrağı listener tarafında düşürülecek.
+          // Sonuç purchaseUpdatedListener / purchaseErrorListener'a düşer.
+          // isPurchasing orada false'a çekilir.
           return;
-        } catch (err) {
-          console.log('IAP requestPurchase hatası:', err);
-          if (err?.code !== 'E_USER_CANCELLED') {
+        } catch (e) {
+          console.log('requestPurchase hatası:', e);
+          if (e?.code !== 'E_USER_CANCELLED') {
             playSound('error');
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            showAlert('Hata', err?.message ?? 'Ödeme işlemi başlatılamadı.');
+            showAlert('Hata', e?.message || 'Satın alma başlatılamadı.');
           }
           setIsPurchasing(false);
           return;
@@ -385,8 +441,8 @@ export default function MarketScreen({ navigation }) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       showAlert("Hata", "İşlem gerçekleştirilemedi.");
     }
-
-    setIsPurchasing(false);
+    
+    setIsPurchasing(false); 
   };
 
   const renderIcon = (item, size) => {
@@ -466,13 +522,8 @@ export default function MarketScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      {/* CUSTOM ALERT MODAL */}
-      <Modal
-        visible={alertVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setAlertVisible(false)}
-      >
+      {/* 🚀 CUSTOM ALERT MODAL */}
+      <Modal visible={alertVisible} transparent animationType="fade">
         <View style={styles.alertOverlay}>
           <View style={styles.alertContainer}>
             <LinearGradient colors={[palet.pink, palet.orange]} start={{x:0, y:0}} end={{x:1, y:1}} style={styles.alertHeaderIcon}>
@@ -540,13 +591,10 @@ export default function MarketScreen({ navigation }) {
         </View>
         
         <TouchableOpacity
-            style={styles.adBannerCard}
-            activeOpacity={0.9}
-            onPress={() => {
-              playSound('click');
-              showRewardAd();
-            }}
-            >
+          style={styles.adBannerCard}
+          activeOpacity={0.9}
+          onPress={showRewardedAd}
+        >
           <LinearGradient colors={[palet.orange, palet.pink]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.adBannerGradient}>
             <View style={styles.adBannerInfo}>
               <View style={styles.adIconContainer}>

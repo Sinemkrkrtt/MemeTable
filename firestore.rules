@@ -17,7 +17,7 @@ service cloud.firestore {
     // Client'in DİREKT yazmasına yasaklanan alanlar.
     // Bu alanlar yalnızca Cloud Function (admin SDK) tarafından güncellenir.
     function locked() {
-      return ['coins', 'diamonds', 'wonHearts', 'guestMatchesLeft',
+      return ['wonHearts', 'guestMatchesLeft',
               'joker_skip', 'joker_double', 'joker_freeze',
               'isBoxOpened', 'lastMissionDate', 'level', 'experience'];
     }

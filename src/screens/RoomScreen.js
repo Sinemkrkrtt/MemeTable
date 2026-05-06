@@ -188,7 +188,7 @@ export default function RoomScreen({ navigation, route }) {
     safePause(playTickPlayer);
   }
 };
-
+// İlk round durumunu (prompt) tetikleyen Effect - GÜNCELLENDİ
   useEffect(() => {
     if (amIHost && currentPrompt === "Durum bekleniyor..." && situationPrompts.length > 0 && roomId) {
       let randomPrompt;
@@ -197,10 +197,14 @@ export default function RoomScreen({ navigation, route }) {
         randomPrompt = situationPrompts[Math.floor(Math.random() * situationPrompts.length)];
         attempts++;
       } while (usedPromptsRef.current.includes(randomPrompt) && attempts < 50);
-      
-      update(ref(database, `rooms/${roomId}`), { currentPrompt: randomPrompt });
+
+      // Sadece gerçekten geçerli bir prompt üretildiyse DB'ye yaz
+      if (randomPrompt) {
+        update(ref(database, `rooms/${roomId}`), { currentPrompt: randomPrompt })
+          .catch(err => console.log("İlk prompt veritabanına yazılamadı:", err));
+      }
     }
-  }, [amIHost, currentPrompt, situationPrompts, roomId]);
+  }, [amIHost, currentPrompt, situationPrompts.length, roomId]);
 
  useEffect(() => {
     const fetchFirebaseData = async () => {
@@ -208,6 +212,7 @@ export default function RoomScreen({ navigation, route }) {
         // 🚀 MEME'LERİ ÇEK (Supabase yerine Firebase Firestore)
         const memesCol = collection(db, 'memes');
         const memesSnapshot = await getDocs(memesCol);
+        
         const memesList = memesSnapshot.docs.map(doc => ({
           ...doc.data(),
           id: doc.id // Firestore döküman ID'sini alıyoruz
@@ -215,9 +220,11 @@ export default function RoomScreen({ navigation, route }) {
         setOfficialMemes(memesList);
 
         // 🚀 DURUMLARI (SITUATIONS) ÇEK
-        const situationsCol = collection(db, 'situations');
-        const situationsSnapshot = await getDocs(situationsCol);
-        const prompts = situationsSnapshot.docs.map(doc => doc.data().content);
+         const situationsCol = collection(db, 'situations');
+         const situationsSnapshot = await getDocs(situationsCol);
+         const prompts = situationsSnapshot.docs
+            .map(doc => doc.data().content)
+            .filter(Boolean);
         setSituationPrompts(prompts);
 
       } catch (error) {
@@ -298,15 +305,14 @@ export default function RoomScreen({ navigation, route }) {
 
       const roomRef = ref(database, `rooms/${roomId}`);
 
-    const unsubscribeRoom = onValue(roomRef, (snapshot) => {
+    // ... 
+      const unsubscribeRoom = onValue(roomRef, (snapshot) => {
         const roomData = snapshot.val();
         if (roomData) {
           setIsTimeFrozen(roomData.isGlobalFrozen || false);
           
-          // 🚀 DÜZELTİLDİ: Tur değişikliği kontrolü daha sıkı hale getirildi
           const newRound = roomData.round;
           if (newRound && newRound > currentRoundRef.current) {
-            // Sadece gerçekten yeni bir tur geldiyse tetikle!
             const isRoundProcessed = currentRoundRef.current === newRound;
             if (!isRoundProcessed) {
                currentRoundRef.current = newRound;
@@ -314,7 +320,8 @@ export default function RoomScreen({ navigation, route }) {
             }
           }
           
-          if (roomData.currentPrompt) {
+          // 🚀 GÜNCELLENDİ: Eğer gelen veri dolu bir string ise state'i güncelle
+          if (roomData.currentPrompt && roomData.currentPrompt.trim() !== "") {
               setCurrentPrompt(roomData.currentPrompt);
               if (!usedPromptsRef.current.includes(roomData.currentPrompt)) {
                 usedPromptsRef.current.push(roomData.currentPrompt);
@@ -613,19 +620,37 @@ export default function RoomScreen({ navigation, route }) {
         update(ref(database, `rooms/${roomId}/players/${me.id}`), { playedCard: cardToPlay });
       }
     };
-
-  const moveToVotingPhase = () => {
+const moveToVotingPhase = () => {
+      // 1. Kartı olan geçerli oyuncuları filtrele
       const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...' && p.playedCard);
-      const tableCards = actualPlayers.map(p => ({
+      
+      // 2. Ham kart havuzunu oluştur (Senin kartın da dahil)
+      // Burada ID'leri ve 'owner' bilgisini eşleştiriyoruz ki puanlama doğru çalışsın.
+      let tableCards = actualPlayers.map(p => ({
           ...p.playedCard,
-          isMine: p.name?.trim() === cleanMyName,
-          owner: p.name,
-          id: p.playedCard.id + '_' + p.name 
+          isMine: p.name?.trim() === cleanMyName, // Bu sadece senin yerel render'ında 'VOTED' göstermek için
+          owner: p.name, // Puanlama için kritik
+          // Benzersiz bir ID oluştur, ismine ID ve isim ekle (Meme ID'si aynı olabilir)
+          id: `${p.playedCard.id}_${p.name}_${currentRoundRef.current}` 
       }));
 
-      const shuffledCards = tableCards.sort(() => Math.random() - 0.5);
-      setPlayedCards(shuffledCards);
+      // 3. Fisher-Yates (Gerçek) Karıştırma Algoritmamızı uygulayalım.
+      // Sadece sort(() => Math.random() - 0.5) bazen React'ta tutarsızlık yaratabilir.
+      const shuffleArray = (array) => {
+        for (let i = array.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+      };
+
+      // 4. Havuzu tamamen karıştır (Senin kartın da dahil)
+      const totallyShuffledCards = shuffleArray([...tableCards]);
       
+      // 5. State'i güncelle
+      setPlayedCards(totallyShuffledCards);
+      
+      // 6. Fazı değiştir ve animasyonları başlat
       setPhase('VOTING');
       setTimeLeft(10);
       Animated.sequence([

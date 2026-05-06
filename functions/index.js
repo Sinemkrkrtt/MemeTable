@@ -12,11 +12,16 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
-const fetch = require('node-fetch');
 const { google } = require('googleapis');
+const fs = require('fs');
+const path = require('path');
+const { SignedDataVerifier, Environment } = require('@apple/app-store-server-library');
 
 admin.initializeApp();
 setGlobalOptions({ region: 'europe-west1', maxInstances: 20 });
+
+const APPLE_BUNDLE_ID = 'com.sinem.memetable.app';
+const CERTS_DIR = path.join(__dirname, 'certs');
 
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
@@ -86,33 +91,55 @@ function todayKey() {
 // IAP DOĞRULAMA
 // ============================================================================
 
-// Apple StoreKit receipt doğrulaması (App Store sandbox + production)
-async function verifyAppleReceipt(receiptData) {
-  const sharedSecret = process.env.APPLE_SHARED_SECRET;
-  if (!sharedSecret) {
-    throw new HttpsError('failed-precondition', 'APPLE_SHARED_SECRET tanımlı değil.');
+// Apple StoreKit 2 JWS (signedTransaction) doğrulaması.
+// Cert chain validation Apple Root CA'lere kadar yapılır → imzayı saldırgan üretemez.
+let _appleRootCAs = null;
+const _verifierCache = {};
+
+function loadAppleRootCAs() {
+  if (_appleRootCAs) return _appleRootCAs;
+  if (!fs.existsSync(CERTS_DIR)) {
+    throw new HttpsError(
+      'failed-precondition',
+      'functions/certs/ dizini yok. Apple Root CA cert dosyalarını yerleştir.'
+    );
   }
-
-  const body = JSON.stringify({
-    'receipt-data': receiptData,
-    password: sharedSecret,
-    'exclude-old-transactions': true,
-  });
-
-  // Önce production, status 21007 dönerse sandbox
-  let res = await fetch('https://buy.itunes.apple.com/verifyReceipt', { method: 'POST', body });
-  let json = await res.json();
-
-  if (json.status === 21007) {
-    res = await fetch('https://sandbox.itunes.apple.com/verifyReceipt', { method: 'POST', body });
-    json = await res.json();
+  const files = fs.readdirSync(CERTS_DIR).filter((f) => f.endsWith('.cer') || f.endsWith('.pem'));
+  if (!files.length) {
+    throw new HttpsError(
+      'failed-precondition',
+      'functions/certs/ içinde Apple Root CA cert dosyası yok (AppleRootCA-G3.cer vb.).'
+    );
   }
+  _appleRootCAs = files.map((f) => fs.readFileSync(path.join(CERTS_DIR, f)));
+  return _appleRootCAs;
+}
 
-  if (json.status !== 0) {
-    throw new HttpsError('invalid-argument', `Apple receipt geçersiz (status: ${json.status})`);
+function getAppleVerifier(env) {
+  if (_verifierCache[env]) return _verifierCache[env];
+  const roots = loadAppleRootCAs();
+  const verifier = new SignedDataVerifier(
+    roots,
+    false, // enableOnlineChecks: çevrimdışı cert/imza doğrulaması yeterli
+    env === 'sandbox' ? Environment.SANDBOX : Environment.PRODUCTION,
+    APPLE_BUNDLE_ID
+  );
+  _verifierCache[env] = verifier;
+  return verifier;
+}
+
+// JWS'i sandbox sonra production olarak dene; ilk başaran kazanır.
+async function verifyAppleJWS(signedTransaction) {
+  const errors = [];
+  for (const env of ['sandbox', 'production']) {
+    try {
+      const v = getAppleVerifier(env);
+      return await v.verifyAndDecodeTransaction(signedTransaction);
+    } catch (e) {
+      errors.push(`${env}: ${e?.message || e}`);
+    }
   }
-
-  return json;
+  throw new HttpsError('invalid-argument', `Apple JWS doğrulanamadı (${errors.join(' | ')})`);
 }
 
 // Google Play Developer API ile purchase doğrulaması
@@ -146,16 +173,16 @@ async function verifyGooglePurchase(productId, purchaseToken) {
  *
  * @param data.platform 'ios' | 'android'
  * @param data.productId 'com.sinem.memetable.app.matches_3' vb.
- * @param data.transactionId iOS: transaction id, Android: orderId
- * @param data.receipt iOS receipt-data (base64) — iOS için
- * @param data.purchaseToken Google purchase token — Android için
+ * @param data.transactionId Client'ın gönderdiği transaction id (cross-session dedupe için)
+ * @param data.purchaseToken iOS = StoreKit 2 JWS (signedTransaction), Android = Google Play token
  */
 exports.validatePurchase = onCall({ enforceAppCheck: false }, async (request) => {
   const uid = requireAuth(request);
-  const { platform, productId, transactionId, receipt, purchaseToken } = request.data || {};
+  const { platform, productId, purchaseToken } = request.data || {};
+  let { transactionId } = request.data || {};
 
-  if (!platform || !productId || !transactionId) {
-    throw new HttpsError('invalid-argument', 'platform / productId / transactionId zorunlu.');
+  if (!platform || !productId || !transactionId || !purchaseToken) {
+    throw new HttpsError('invalid-argument', 'platform / productId / transactionId / purchaseToken zorunlu.');
   }
 
   const productConfig = IAP_PRODUCTS[productId];
@@ -163,22 +190,30 @@ exports.validatePurchase = onCall({ enforceAppCheck: false }, async (request) =>
     throw new HttpsError('invalid-argument', `Tanımsız ürün: ${productId}`);
   }
 
-  // Cross-session dedupe: bu transaction daha önce işlendi mi?
+  // Doğrulama: client iddialarına güvenmiyoruz — productId / bundleId / transactionId imzalı
+  // payload'la eşleşmek zorunda.
+  if (platform === 'ios') {
+    const decoded = await verifyAppleJWS(purchaseToken);
+    if (decoded.bundleId !== APPLE_BUNDLE_ID) {
+      throw new HttpsError('invalid-argument', 'bundleId eşleşmiyor.');
+    }
+    if (decoded.productId !== productId) {
+      throw new HttpsError('invalid-argument', 'productId eşleşmiyor.');
+    }
+    // İmzalı transactionId'yi otoriter kabul et (client manipüle etmiş olabilir).
+    transactionId = String(decoded.transactionId);
+  } else if (platform === 'android') {
+    await verifyGooglePurchase(productId, purchaseToken);
+  } else {
+    throw new HttpsError('invalid-argument', `Bilinmeyen platform: ${platform}`);
+  }
+
+  // Cross-session dedupe — verify SONRASI yap ki client uydurma transactionId ile
+  // gerçek bir purchaseToken'i hiç işlenmiş gibi gösteremesin.
   const txRef = db.collection('processedPurchases').doc(transactionId);
   const txSnap = await txRef.get();
   if (txSnap.exists) {
     return { alreadyProcessed: true };
-  }
-
-  // Receipt doğrulama
-  if (platform === 'ios') {
-    if (!receipt) throw new HttpsError('invalid-argument', 'iOS receipt eksik.');
-    await verifyAppleReceipt(receipt);
-  } else if (platform === 'android') {
-    if (!purchaseToken) throw new HttpsError('invalid-argument', 'Android purchaseToken eksik.');
-    await verifyGooglePurchase(productId, purchaseToken);
-  } else {
-    throw new HttpsError('invalid-argument', `Bilinmeyen platform: ${platform}`);
   }
 
   // Atomik: hem kullanıcının ekonomisini güncelle hem de processedPurchases'a yaz
@@ -186,7 +221,12 @@ exports.validatePurchase = onCall({ enforceAppCheck: false }, async (request) =>
   await db.runTransaction(async (t) => {
     const dup = await t.get(txRef);
     if (dup.exists) return; // race güvencesi
-    t.update(userRef, { [productConfig.field]: FieldValue.increment(productConfig.amount) });
+    // set + merge: user doc yoksa otomatik oluşturulsun ki update 'not-found' atmasın.
+    t.set(
+      userRef,
+      { [productConfig.field]: FieldValue.increment(productConfig.amount) },
+      { merge: true }
+    );
     t.set(txRef, {
       uid,
       platform,
