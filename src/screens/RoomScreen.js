@@ -121,6 +121,8 @@ export default function RoomScreen({ navigation, route }) {
   const [officialMemes, setOfficialMemes] = useState([]);
   const [situationPrompts, setSituationPrompts] = useState([]);
 
+  
+
   const tickPlayer = useAudioPlayer(require('../../assets/sounds/tick.mp3'));
   const playTickPlayer = useAudioPlayer(require('../../assets/sounds/play_tick.mp3'));
   const swooshPlayer = useAudioPlayer(require('../../assets/sounds/swoosh.mp3'));
@@ -338,32 +340,37 @@ export default function RoomScreen({ navigation, route }) {
   useEffect(() => {
     let timer;
     const totalPhaseTime = phase === 'READING' ? 10 : (phase === 'PLAYING' ? 5 : 10);
-    
-    Animated.timing(timeLeftAnim, {
-      toValue: timeLeft / totalPhaseTime,
-      duration: 1000,
-      useNativeDriver: false, 
-    }).start();
 
     const activePhases = ['READING', 'PLAYING', 'VOTING'];
 
+    // Sadece aktif fazlarda bar'ı animate et — WAITING_* / ROUND_ENDED fazlarında
+    // gereksiz animation çalışıp bar'ı silikleştirmesin.
+    if (activePhases.includes(phase)) {
+      Animated.timing(timeLeftAnim, {
+        toValue: timeLeft / totalPhaseTime,
+        duration: 1000,
+        useNativeDriver: false,
+      }).start();
+    }
+
     const isFullyLoaded = isRoomReady && officialMemes.length > 0 && situationPrompts.length > 0;
 
-    if (!isFullyLoaded) return; 
+    if (!isFullyLoaded) return;
 
-    if (timeLeft > 0 && activePhases.includes(phase) && !isTimeFrozen) { 
+    if (timeLeft > 0 && activePhases.includes(phase) && !isTimeFrozen) {
       if (phase === 'PLAYING' && timeLeft === 3 && !isMuted) {
         tickPlayer.seekTo(0);
         tickPlayer.play();
       }
       timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
    } else if (timeLeft === 0 && activePhases.includes(phase)) {
-      timeLeftAnim.setValue(1);
       tickPlayer.pause();
       if (phase === 'READING') {
+        // Sadece sonraki faz (PLAYING) yine aktifken bar'ı doluya snapla.
+        timeLeftAnim.setValue(1);
         setPhase('PLAYING');
-        setTimeLeft(7); 
-      } 
+        setTimeLeft(7);
+      }
       else if (phase === 'PLAYING') {
         if (!stateRefs.current.hasPlayed && stateRefs.current.myHand.length > 0) {
           const handNow = [...stateRefs.current.myHand]; 
