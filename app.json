@@ -2,7 +2,7 @@
   "expo": {
     "name": "MemeTable",
     "slug": "MemeTable",
-    "version": "1.0.3",
+    "version": "1.0.8",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -13,7 +13,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "buildNumber": "7",
+      "buildNumber": "8",
       "supportsTablet": false,
       "bundleIdentifier": "com.sinem.memetable.app",
       "infoPlist": {

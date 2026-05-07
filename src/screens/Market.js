@@ -108,6 +108,7 @@ export default function MarketScreen({ navigation }) {
 
   // Rewarded ad
   const rewardedAdRef = useRef(null);
+  const pendingShowRef = useRef(false); // Yüklenmeden basıldıysa, yüklenince otomatik göster.
   const [adLoaded, setAdLoaded] = useState(false);
   const [adLoading, setAdLoading] = useState(false);
 
@@ -273,7 +274,7 @@ export default function MarketScreen({ navigation }) {
     let errorSub = null;
 
     const loadAd = () => {
-      if (adLoading) return;
+      console.log('[ADS] loadAd çağrıldı, unit:', REWARDED_AD_UNIT_ID);
       setAdLoading(true);
       const ad = RewardedAd.createForAdRequest(REWARDED_AD_UNIT_ID, {
         requestNonPersonalizedAdsOnly: true,
@@ -281,11 +282,23 @@ export default function MarketScreen({ navigation }) {
       rewardedAdRef.current = ad;
 
       loadedSub = ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
+        console.log('[ADS] LOADED — reklam hazır');
         setAdLoaded(true);
         setAdLoading(false);
+        // Kullanıcı yüklenmeden bastıysa şimdi otomatik göster.
+        if (pendingShowRef.current) {
+          pendingShowRef.current = false;
+          setAlertVisible(false);
+          try {
+            ad.show();
+          } catch (e) {
+            console.log('[ADS] auto-show hatası:', e?.message || e);
+          }
+        }
       });
 
-      earnedSub = ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, async () => {
+      earnedSub = ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, async (reward) => {
+        console.log('[ADS] EARNED_REWARD', reward);
         const user = auth.currentUser;
         if (!user) return;
         try {
@@ -295,14 +308,14 @@ export default function MarketScreen({ navigation }) {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           showAlert('Tebrikler!', `+${REWARD_COIN_AMOUNT} Coin hesabına eklendi.`);
         } catch (e) {
-          console.log('Reklam ödülü hatası:', e);
+          console.log('[ADS] Ödül yazılamadı:', e);
           playSound('error');
           showAlert('Hata', 'Ödül eklenemedi.');
         }
       });
 
-      // Reklam kapanınca veya hata olunca yeni reklam yükle.
       const reload = () => {
+        console.log('[ADS] reload — yeni reklam yükleniyor');
         setAdLoaded(false);
         rewardedAdRef.current = null;
         loadedSub?.();
@@ -313,18 +326,23 @@ export default function MarketScreen({ navigation }) {
       };
       closedSub = ad.addAdEventListener(AdEventType.CLOSED, reload);
       errorSub = ad.addAdEventListener(AdEventType.ERROR, (err) => {
-        console.log('Rewarded ad hatası:', err?.message || err);
+        console.log('[ADS] ERROR:', err?.code, err?.message || err);
         setAdLoading(false);
         setAdLoaded(false);
       });
 
       ad.load();
+      console.log('[ADS] ad.load() çağrıldı');
     };
 
+    console.log('[ADS] mobileAds.initialize() çağrılıyor...');
     mobileAds()
       .initialize()
-      .then(() => loadAd())
-      .catch((e) => console.log('mobileAds init hatası:', e?.message || e));
+      .then((status) => {
+        console.log('[ADS] initialize SUCCESS', status);
+        loadAd();
+      })
+      .catch((e) => console.log('[ADS] initialize HATA:', e?.message || e));
 
     return () => {
       loadedSub?.();
@@ -335,17 +353,26 @@ export default function MarketScreen({ navigation }) {
   }, []);
 
   const showRewardedAd = () => {
+    console.log('[ADS] showRewardedAd çağrıldı, adLoaded:', adLoaded, 'ref:', !!rewardedAdRef.current);
     playSound('click');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const ad = rewardedAdRef.current;
     if (!adLoaded || !ad) {
-      showAlert('Reklam Hazır Değil', 'Reklam yükleniyor, birkaç saniye sonra tekrar dene.');
+      console.log('[ADS] Reklam henüz yüklenmedi — pending\'e alındı, yüklenince otomatik gösterilecek');
+      pendingShowRef.current = true;
+      showAlert(
+        'Reklam Yükleniyor',
+        'Birkaç saniye içinde başlayacak...',
+        [{ text: 'İptal', style: 'cancel', onPress: () => { pendingShowRef.current = false; } }]
+      );
       return;
     }
     try {
+      console.log('[ADS] ad.show() çağrılıyor');
       ad.show();
+      console.log('[ADS] ad.show() döndü');
     } catch (e) {
-      console.log('Rewarded show hatası:', e);
+      console.log('[ADS] show hatası:', e?.code, e?.message || e);
       showAlert('Hata', 'Reklam gösterilemedi.');
     }
   };
