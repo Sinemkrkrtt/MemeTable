@@ -4,6 +4,10 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './src/services/firebase';
+
+// 🚀 EKLENEN KISIM: Apple Takip Şeffaflığı (ATT) importu
+import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
+
 import AuthScreen from './src/screens/AuthScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import LobbyScreen from './src/screens/LobbyScreen'; 
@@ -19,9 +23,29 @@ import RandomMatchScreen from './src/screens/RandomMatchScreen';
 import GuestLimitScreen from './src/screens/GuestLimitScreen';
 
 const Stack = createStackNavigator();
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // 🚀 EKLENEN KISIM: Uygulama açıldığında ATT iznini isteyen fonksiyon
+  useEffect(() => {
+    const getTrackingPermission = async () => {
+      try {
+        const { status } = await requestTrackingPermissionsAsync();
+        if (status === 'granted') {
+          console.log('Takip izni verildi, reklamlar kişiselleştirilecek.');
+        } else {
+          console.log('Takip izni reddedildi.');
+        }
+      } catch (error) {
+        console.log('Takip izni istenirken hata oluştu:', error);
+      }
+    };
+
+    getTrackingPermission();
+  }, []);
+  // -----------------------------------------------------------
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (authenticatedUser) => {
@@ -53,10 +77,10 @@ export default function App() {
             <Stack.Screen name="RoomScreen" component={RoomScreen} /> 
             <Stack.Screen name="JoinRoom" component={JoinRoom} />
             <Stack.Screen name="ScoreScreen" component={ScoreScreen} />
-             <Stack.Screen name="DisconnectModal" component={DisconnectModal} />
-                <Stack.Screen name="JokerModal" component={JokerModal} />
-                <Stack.Screen name="RandomMatchScreen" component={RandomMatchScreen}/>
-                <Stack.Screen name="GuestLimitScreen" component={GuestLimitScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="DisconnectModal" component={DisconnectModal} />
+            <Stack.Screen name="JokerModal" component={JokerModal} />
+            <Stack.Screen name="RandomMatchScreen" component={RandomMatchScreen}/>
+            <Stack.Screen name="GuestLimitScreen" component={GuestLimitScreen} options={{ headerShown: false }} />
           </>
         ) : (
           <Stack.Screen name="AuthScreen" component={AuthScreen} />

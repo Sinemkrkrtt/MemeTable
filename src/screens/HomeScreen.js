@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { View, Text, TouchableOpacity, StatusBar, ScrollView, Dimensions, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StatusBar, ScrollView, Dimensions, Animated, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
-import { doc, onSnapshot } from 'firebase/firestore'; 
+import { doc, onSnapshot, deleteDoc } from 'firebase/firestore'; 
 import { db, auth } from '../services/firebase';
-import { signOut } from 'firebase/auth';
+import { signOut, deleteUser } from 'firebase/auth';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { styles, palet } from './HomeScreenStyles';
 import DailyMission from './DailyMission';
@@ -130,6 +130,69 @@ useEffect(() => {
     });
   };
 
+  // --- EKLENEN HESAP İŞLEMLERİ BÖLÜMÜ BAŞLANGICI ---
+  const executeAccountDeletion = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      const userRef = doc(db, "users", user.uid);
+      await deleteDoc(userRef);
+      await deleteUser(user);
+      console.log("Hesap başarıyla silindi");
+    } catch (error) {
+      console.log("Hesap silme hatası:", error);
+      if (error.code === 'auth/requires-recent-login') {
+        Alert.alert(
+          "Güvenlik Uyarısı", 
+          "Güvenliğiniz için hesabınızı silmeden önce tekrar giriş yapmanız gerekmektedir. Lütfen çıkış yapıp tekrar girin ve bu işlemi tekrarlayın."
+        );
+      } else {
+        Alert.alert("Hata", "Hesap silinirken bir sorun oluştu.");
+      }
+    }
+  };
+
+  const handleConfirmDelete = () => {
+    Alert.alert(
+      "Emin Misiniz?",
+      "Hesabınız ve tüm verileriniz kalıcı olarak silinecektir. Bu işlem geri alınamaz.",
+      [
+        { text: "Vazgeç", style: "cancel" },
+        { 
+          text: "Kalıcı Olarak Sil", 
+          style: "destructive", 
+          onPress: () => executeAccountDeletion() 
+        }
+      ]
+    );
+  };
+
+  const handleAccountActions = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    
+    Alert.alert(
+      "Hesap İşlemleri",
+      "Ne yapmak istiyorsunuz?",
+      [
+        { text: "Vazgeç", style: "cancel" },
+        { 
+          text: "Çıkış Yap", 
+          onPress: () => {
+            signOut(auth).catch((error) => console.log(error));
+          }
+        },
+        { 
+          text: "Hesabı Sil", 
+          style: "destructive",
+          onPress: () => handleConfirmDelete() 
+        }
+      ],
+      { cancelable: true }
+    );
+  };
+  // --- EKLENEN HESAP İŞLEMLERİ BÖLÜMÜ BİTİŞİ ---
+
   if (!fontsLoaded) return null; 
 
   const onPressIn = () => {
@@ -174,18 +237,15 @@ useEffect(() => {
               </View>
             </TouchableOpacity>
 
-          <TouchableOpacity 
+            {/* BUTON BURADA GÜNCELLENDİ */}
+            <TouchableOpacity 
               style={styles.creativeLogout} 
-              onPress={() => {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                signOut(auth).then(() => {
-                }).catch((error) => console.log(error));
-              }}
+              onPress={handleAccountActions}
             >
-            <View style={styles.logoutIcon}>
-              <Ionicons name="power" size={20} color={palet.peach} />
-            </View>
-          </TouchableOpacity>
+              <View style={styles.logoutIcon}>
+                <Ionicons name="power" size={20} color={palet.peach} />
+              </View>
+            </TouchableOpacity>
 
           </View>
 
