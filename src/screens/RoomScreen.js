@@ -78,8 +78,8 @@ export default function RoomScreen({ navigation, route }) {
   const [players, setPlayers] = useState([]); 
   const [myHand, setMyHand] = useState([]);
   const [selectedCard, setSelectedCard] = useState(null);
-  const [phase, setPhase] = useState('READING'); 
-  const [timeLeft, setTimeLeft] = useState(5); 
+  const [phase, setPhase] = useState('PLAYING');
+  const [timeLeft, setTimeLeft] = useState(10);
   const [stagedCard, setStagedCard] = useState(null); 
   const [playedCards, setPlayedCards] = useState([]); 
   const [hasPlayed, setHasPlayed] = useState(false); 
@@ -339,7 +339,7 @@ export default function RoomScreen({ navigation, route }) {
 
   useEffect(() => {
     let timer;
-    const totalPhaseTime = phase === 'READING' ? 10 : (phase === 'PLAYING' ? 5 : 10);
+    const totalPhaseTime = 10;
 
     const activePhases = ['READING', 'PLAYING', 'VOTING'];
 
@@ -369,7 +369,7 @@ export default function RoomScreen({ navigation, route }) {
         // Sadece sonraki faz (PLAYING) yine aktifken bar'ı doluya snapla.
         timeLeftAnim.setValue(1);
         setPhase('PLAYING');
-        setTimeLeft(7);
+        setTimeLeft(10);
       }
       else if (phase === 'PLAYING') {
         if (!stateRefs.current.hasPlayed && stateRefs.current.myHand.length > 0) {
@@ -835,8 +835,8 @@ export default function RoomScreen({ navigation, route }) {
       setVotedCardId(null);
       setRoundEnded(false);
       setWinnerName("");
-      setPhase('READING');
-      setTimeLeft(5);
+      setPhase('PLAYING');
+      setTimeLeft(10);
       
       stateRefs.current.hasPlayed = false;
       stateRefs.current.votedCardId = null;
@@ -1093,10 +1093,26 @@ if (!isRoomReady || officialMemes.length === 0 || situationPrompts.length === 0)
         ))}
 
             <View style={styles.centerArea}>
-              {phase === 'READING' && (
+              {(phase === 'READING' || phase === 'PLAYING' || phase === 'WAITING_CARDS') && (
               <Animated.View style={[styles.situationCardWrapper, { transform: [{ scale: popAnim }, { scale: cardScale }, { rotateY: cardRotate }] }]}>
               <View style={styles.premiumSituationCard}>
-                
+                {!isTimeFrozen && (phase === 'READING' || phase === 'PLAYING') && (
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      styles.situationCornerTimer,
+                      {
+                        backgroundColor: timeLeftAnim.interpolate({
+                          inputRange: [0, 0.2, 0.5, 1],
+                          outputRange: ['#FF3B30', '#FF9500', '#FFDC5E', '#FF69EB'],
+                        }),
+                      },
+                    ]}
+                  >
+                    <Text style={styles.situationCornerTimerText}>{timeLeft}</Text>
+                  </Animated.View>
+                )}
+
                 <View style={styles.cardInnerContent}>
                   <View style={styles.premiumHeaderCentered}>
                     <View style={styles.moodBadge}>
@@ -1130,37 +1146,14 @@ if (!isRoomReady || officialMemes.length === 0 || situationPrompts.length === 0)
                       </View>
                     </Animated.View>
                )}
-              {(phase === 'PLAYING' || phase === 'WAITING_CARDS') && (
-                <View style={styles.proTimerContainer}>
-                  <View style={[styles.staticRing, isTimeFrozen && styles.staticRingFrozen]} />
-                  <Animated.View style={[
-                    styles.timerRing, 
-                    isTimeFrozen ? styles.timerRingFrozen : (timeLeft <= 3 && phase !== 'WAITING_CARDS' ? styles.timerRingDanger : styles.timerRingNormal),
-                    { transform: [{ rotate: rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }
-                  ]} />
-                  {isTimeFrozen && (
-                    <View style={styles.snowOverlay} pointerEvents="none">
-                       <Snowflake delay={0} left="25%" size={14} />
-                       <Snowflake delay={600} left="55%" size={10} />
-                    </View>
-                  )}
-                  <View style={[styles.modernTimerContent, isTimeFrozen && styles.modernTimerContentFrozen]}>
-                     <Text style={[
-                       styles.proTimerText, 
-                       timeLeft <= 3 && !isTimeFrozen && phase !== 'WAITING_CARDS' && styles.proTimerTextDanger,
-                       isTimeFrozen && styles.proTimerTextFrozen
-                     ]}>{phase === 'WAITING_CARDS' ? '...' : timeLeft}</Text>
-                  </View>
-                </View>
-              )}
 
               {(phase === 'VOTING' || phase === 'WAITING_VOTES' || phase === 'ROUND_ENDED') && playedCards.length > 0 && (
                 <View style={styles.votingAreaPro}>
                   {!roundEnded && (
                     <View style={styles.proProgressBarContainer}>
                       <Animated.View style={[
-                        styles.proProgressBar, 
-                        { 
+                        styles.proProgressBar,
+                        {
                           width: timeLeftAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
                           backgroundColor: timeLeftAnim.interpolate({ inputRange: [0, 0.2, 0.5, 1], outputRange: ['#FF3B30', '#FF9500', '#FFDC5E', '#FF69EB'] })
                         }
