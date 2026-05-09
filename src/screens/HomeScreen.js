@@ -1,0 +1,351 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { View, Text, TouchableOpacity, StatusBar, ScrollView, Dimensions, Animated, Alert } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons, AntDesign } from '@expo/vector-icons';
+import { doc, onSnapshot, deleteDoc } from 'firebase/firestore'; 
+import { db, auth } from '../services/firebase';
+import { signOut, deleteUser } from 'firebase/auth';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { styles, palet } from './HomeScreenStyles';
+import DailyMission from './DailyMission';
+import RandomMatchScreen from './RandomMatchScreen';
+import { Image } from 'expo-image';
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import * as Haptics from 'expo-haptics';
+import { useFonts } from 'expo-font';
+import { 
+  Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold, 
+  Nunito_900Black, Nunito_800ExtraBold_Italic 
+} from '@expo-google-fonts/nunito';
+
+const { width } = Dimensions.get('window');
+
+// 🚀 navigation yanına route prop'u eklendi
+export default function HomeScreen({ navigation, route }) {
+  const [nickname, setNickname] = useState("");
+  const [wonHearts, setWonHearts] = useState(0);
+  const [isBoxOpened, setIsBoxOpened] = useState(false);
+  const [coins, setCoins] = useState(0);
+  const [diamonds, setDiamonds] = useState(0);
+  const [guestMatchesLeft, setGuestMatchesLeft] = useState(null); 
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scalePress = useRef(new Animated.Value(1)).current;
+
+  let [fontsLoaded] = useFonts({
+    Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold, Nunito_900Black, Nunito_800ExtraBold_Italic,
+  });
+
+  const moneySound = useAudioPlayer(require('../../assets/sounds/cash.mp3'));
+  const tapSound = useAudioPlayer(require('../../assets/sounds/ui_tap.mp3'));
+
+  const playHomeSound = (soundType) => {
+    try {
+      if (soundType === 'money') {
+        moneySound.seekTo(0);
+        moneySound.play();
+      } else {
+        tapSound.seekTo(0);
+        tapSound.play();
+      }
+    } catch (error) {
+      console.log("Ses çalma hatası:", error);
+    }
+  };
+
+  // 🚀 YENİ: Misafir Karşılama Mesajı Logic'i
+  useEffect(() => {
+    if (route.params?.isNewGuest) {
+      Alert.alert(
+        "Hoş Geldin Misafir! 🎉",
+        "Hızlıca denemen için sana 3 adet ücretsiz eşleşme hakkı tanımladık. İyi eğlenceler!",
+        [
+          { 
+            text: "Hadi Başlayalım!", 
+            onPress: () => {
+              // Parametreyi temizle ki sayfa yenilendiğinde tekrar çıkmasın
+              navigation.setParams({ isNewGuest: undefined });
+            } 
+          }
+        ]
+      );
+    }
+  }, [route.params?.isNewGuest]);
+
+useEffect(() => {
+    const configureAudio = async () => {
+        try {
+            await setAudioModeAsync({ playsInSilentMode: true });
+        } catch (error) {
+            console.log("Ses ayarı yapılamadı:", error);
+        }
+    };
+    configureAudio();
+
+    Animated.timing(fadeAnim, { toValue: 1, duration: 1000, useNativeDriver: true }).start();
+    
+    const user = auth.currentUser;
+    let unsubscribe;
+
+    if (user) {
+      const userRef = doc(db, "users", user.uid);
+      unsubscribe = onSnapshot(
+        userRef, 
+        (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setNickname(data.nickname || "Oyuncu");
+            setWonHearts(data.wonHearts || 0);
+            setIsBoxOpened(data.isBoxOpened || false);
+            setCoins(data.coins || 0);
+            setDiamonds(data.diamonds || 0);
+            setGuestMatchesLeft(
+              typeof data.guestMatchesLeft === 'number' ? data.guestMatchesLeft : null
+            );
+          }
+        },
+        (error) => {
+          console.log("Ana sayfa dinleyicisi kapandı (Çıkış yapıldı):", error.code);
+        }
+      );
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    }, [])
+  );
+
+  const handleNavigateWithAvatar = (targetScreen, additionalParams = {}) => {
+    playHomeSound('tap');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    const user = auth.currentUser;
+    const isGuest = user?.isAnonymous;
+    const isGameScreen =
+      targetScreen === 'RandomMatchScreen' ||
+      targetScreen === 'LobbyScreen' ||
+      targetScreen === 'JoinRoom';
+      
+    if (isGuest && isGameScreen && guestMatchesLeft !== null && guestMatchesLeft <= 0) {
+      navigation.navigate('GuestLimitScreen');
+      return;
+    }
+
+    navigation.navigate('AvatarScreen', {
+      nextScreen: targetScreen,
+      extraParams: additionalParams,
+      myName: nickname
+    });
+  };
+
+  const executeAccountDeletion = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      const userRef = doc(db, "users", user.uid);
+      await deleteDoc(userRef);
+      await deleteUser(user);
+      console.log("Hesap başarıyla silindi");
+    } catch (error) {
+      console.log("Hesap silme hatası:", error);
+      if (error.code === 'auth/requires-recent-login') {
+        Alert.alert(
+          "Güvenlik Uyarısı", 
+          "Güvenliğiniz için hesabınızı silmeden önce tekrar giriş yapmanız gerekmektedir. Lütfen çıkış yapıp tekrar girin ve bu işlemi tekrarlayın."
+        );
+      } else {
+        Alert.alert("Hata", "Hesap silinirken bir sorun oluştu.");
+      }
+    }
+  };
+
+  const handleConfirmDelete = () => {
+    Alert.alert(
+      "Emin Misiniz?",
+      "Hesabınız ve tüm verileriniz kalıcı olarak silinecektir. Bu işlem geri alınamaz.",
+      [
+        { text: "Vazgeç", style: "cancel" },
+        { 
+          text: "Kalıcı Olarak Sil", 
+          style: "destructive", 
+          onPress: () => executeAccountDeletion() 
+        }
+      ]
+    );
+  };
+
+  const handleAccountActions = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    
+    const user = auth.currentUser;
+    const isGuest = user?.isAnonymous;
+
+    // Temel alert seçenekleri (Herkes için geçerli olanlar)
+    const alertOptions = [
+      { text: "Vazgeç", style: "cancel" },
+      { 
+        text: "Çıkış Yap", 
+        onPress: () => {
+          signOut(auth).catch((error) => console.log(error));
+        }
+      }
+    ];
+
+    // Eğer kullanıcı misafir DEĞİLSE "Hesabı Sil" seçeneğini ekle
+    if (!isGuest) {
+      alertOptions.push({ 
+        text: "Hesabı Sil", 
+        style: "destructive",
+        onPress: () => handleConfirmDelete() 
+      });
+    }
+
+    Alert.alert(
+      "Hesap İşlemleri",
+      "Ne yapmak istiyorsunuz?",
+      alertOptions,
+      { cancelable: true }
+    );
+  };
+
+  if (!fontsLoaded) return null; 
+
+  const onPressIn = () => {
+    Animated.spring(scalePress, { toValue: 0.95, useNativeDriver: true }).start();
+  };
+
+  const onPressOut = () => {
+    Animated.spring(scalePress, { toValue: 1, friction: 3, tension: 40, useNativeDriver: true }).start();
+  };
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" />
+      <SafeAreaView style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={[styles.headerRow, { width: '100%', paddingHorizontal: 4 }]}>
+            
+            <TouchableOpacity 
+              onPress={() => {
+                playHomeSound('money');
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                navigation.navigate('MarketScreen');
+              }} 
+              activeOpacity={0.8}
+            >
+              <View style={styles.sleekVault}>
+                <View style={styles.shopIconContainer}>
+                  <AntDesign name="shop" size={22} color='#FF69EB' />
+                </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="layers" size={16} color="#FFD700" />
+                  <Text style={styles.vaultValue}>{coins.toLocaleString()}</Text>
+                </View>
+
+                <View style={styles.vaultSeparator} />
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="diamond" size={16} color="#00E5FF" />
+                  <Text style={styles.vaultValue}>{diamonds}</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.creativeLogout} 
+              onPress={handleAccountActions}
+            >
+              <View style={styles.logoutIcon}>
+                <Ionicons name="power" size={20} color={palet.peach} />
+              </View>
+            </TouchableOpacity>
+
+          </View>
+
+          <Animated.View style={[styles.logoArea, { opacity: fadeAnim }]}>
+            <Image 
+              source={require('../../assets/homeLogo.png')} 
+              style={styles.homeLogoLarge} 
+              contentFit="contain"
+              priority="high" 
+              transition={500} 
+              cachePolicy="memory" 
+            />
+          </Animated.View>
+
+          <View style={styles.gridContainer}>
+            <Animated.View style={{ flex: 1.2, transform: [{ scale: scalePress }] }}>
+                  <TouchableOpacity 
+                    activeOpacity={0.9} 
+                    onPressIn={onPressIn} 
+                    onPressOut={onPressOut} 
+                    onPress={() => handleNavigateWithAvatar('RandomMatchScreen', { mode: 'public' })} 
+                    style={styles.bigActionCard}
+                  >
+                <LinearGradient colors={[palet.vibrant, palet.peach]} style={styles.cardInner}>
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="flash" size={30} color="white" />
+                    <View style={styles.topRightArrow}>
+                      <Ionicons name="arrow-up" size={22} color="white" />
+                    </View>
+                  </View>
+                  <View>
+                    <Text style={styles.cardTitleBig}>HIZLI{"\n"}OYNA</Text>
+                    <Text style={styles.cardSubTitle}>ANINDA EŞLEŞ</Text>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
+            
+            <View style={styles.rightColumn}>
+              <TouchableOpacity 
+                style={styles.smallActionCard} 
+                onPress={() => handleNavigateWithAvatar('LobbyScreen', { isHost: true })}
+              >
+                <LinearGradient colors={[palet.peach, palet.sand]} style={styles.cardInner}>
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="add" size={26} color="white" />
+                    <View style={styles.topRightArrow}>
+                      <Ionicons name="arrow-up" size={22} color="white" />
+                    </View>
+                  </View>
+                  <Text style={styles.cardTitleSmall}>ODA KUR</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.smallActionCard} 
+                onPress={() => handleNavigateWithAvatar('JoinRoom')}
+              >
+                <LinearGradient colors={[palet.sand, palet.yellow]} style={styles.cardInner}>
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="qr-code" size={26} color="white" />
+                    <View style={styles.topRightArrow}>
+                      <Ionicons name="arrow-up" size={22} color="white" />
+                    </View>
+                  </View>
+                  <Text style={styles.cardTitleSmall}>KATIL</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <DailyMission 
+            wonHearts={wonHearts} 
+            onRefreshUser={() => {
+              console.log("Kutu açıldı, veriler yenileniyor...");
+            }}
+          />
+        </ScrollView>
+      </SafeAreaView>
+    </View>
+  );
+}

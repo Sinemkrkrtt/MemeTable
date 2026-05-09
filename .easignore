@@ -1,0 +1,11 @@
+node_modules/
+functions/node_modules/
+.expo/
+ios/build/
+ios/Pods/
+ios/DerivedData/
+android/build/
+android/.gradle/
+.git/
+functions/
+android/

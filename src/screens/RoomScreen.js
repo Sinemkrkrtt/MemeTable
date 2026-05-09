@@ -1,0 +1,1390 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, ScrollView, useWindowDimensions, ActivityIndicator, BackHandler, Alert } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { Ionicons, Entypo } from '@expo/vector-icons';
+import { styles } from './RoomScreenStyles';
+import ScoreScreen from './scoreScreen';
+import JokerModal from './JokerModal';
+import { doc, updateDoc, increment, onSnapshot, getDoc, getDocs, collection } from 'firebase/firestore';
+import { ref, onValue, update, onDisconnect, remove } from 'firebase/database'; 
+import { db, auth, database } from '../services/firebase'; 
+import DisconnectModal from './DisconnectModal'; 
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
+
+
+const hashStr = (str) => {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = Math.imul(31, h) + str.charCodeAt(i) | 0;
+  return h;
+};
+
+const mulberry32 = (a) => {
+  return () => {
+    let t = a += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+};
+
+const Snowflake = ({ delay, left, size }) => {
+  const fallAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 400, delay: delay, useNativeDriver: true }),
+        Animated.parallel([
+          Animated.timing(fallAnim, { toValue: 1, duration: 2500, useNativeDriver: true }),
+          Animated.timing(fadeAnim, { toValue: 0, duration: 2500, useNativeDriver: true })
+        ]),
+        Animated.timing(fallAnim, { toValue: 0, duration: 0, useNativeDriver: true }) 
+      ])
+    ).start();
+  }, []);
+
+  const translateY = fallAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 80] });
+
+  return (
+    <Animated.Text style={{
+      position: 'absolute', left: left, top: -10, fontSize: size,
+      opacity: fadeAnim, transform: [{ translateY }], textShadowColor: '#00E5FF', textShadowRadius: 8
+    }}>❄️</Animated.Text>
+  );
+};
+
+const safePause = (player) => {
+  try {
+    if (player && typeof player.pause === 'function') {
+      player.pause();
+    }
+  } catch (error) {
+    console.log("Ses durdurma hatası (Güvenli şekilde yutuldu):", error.message);
+  }
+};
+
+export default function RoomScreen({ navigation, route }) {
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const { roomId, myAvatarSeed, myName, isHost } = route?.params || { roomId: null, myAvatarSeed: 'Oliver', myName: 'Ben', isHost: false };
+
+  const [players, setPlayers] = useState([]); 
+  const [myHand, setMyHand] = useState([]);
+  const [selectedCard, setSelectedCard] = useState(null);
+  const [phase, setPhase] = useState('PLAYING');
+  const [timeLeft, setTimeLeft] = useState(10);
+
+  const [currentRound, setCurrentRound] = useState(1);
+
+  const [isGuestUser, setIsGuestUser] = useState(false);
+  const [guestMatches, setGuestMatches] = useState(3);
+
+  const [stagedCard, setStagedCard] = useState(null); 
+  const [playedCards, setPlayedCards] = useState([]); 
+  const [hasPlayed, setHasPlayed] = useState(false); 
+  const [votedCardId, setVotedCardId] = useState(null); 
+  const [scores, setScores] = useState({}); 
+  const [roundEnded, setRoundEnded] = useState(false); 
+  const [winnerName, setWinnerName] = useState(""); 
+  const [currentPrompt, setCurrentPrompt] = useState("Durum bekleniyor..."); 
+
+  const [jokerInventory, setJokerInventory] = useState({ joker_skip: 0, joker_double: 0, joker_freeze: 0 }); 
+  const [isJokerMenuVisible, setIsJokerMenuVisible] = useState(false);
+  const [isTimeFrozen, setIsTimeFrozen] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
+
+  const popAnim = useRef(new Animated.Value(0)).current; 
+  const flipAnim = useRef(new Animated.Value(0)).current; 
+  const announcementAnim = useRef(new Animated.Value(0)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const timeLeftAnim = useRef(new Animated.Value(1)).current;
+
+  const currentRoundRef = useRef(1);
+  const initialHandDrawn = useRef(false);
+
+  const isCalculatingRef = useRef(false);
+
+  const usedPromptsRef = useRef([]);
+  const usedMemesRef = useRef([]);
+
+  const prevPlayersRef = useRef([]);
+  const roomClosedAlertShownRef = useRef(false);
+
+  const [forceTimerOpen, setForceTimerOpen] = useState(false);
+
+  const [hoveredNameSlotId, setHoveredNameSlotId] = useState(null);
+  const tooltipTimerRef = useRef(null);
+  const showNameTooltip = (slotId) => {
+    setHoveredNameSlotId(slotId);
+    if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+    tooltipTimerRef.current = setTimeout(() => setHoveredNameSlotId(null), 2500);
+  };
+  useEffect(() => () => { if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current); }, []);
+
+  const cleanMyName = myName?.trim();
+  const me = players.find(p => p.name?.trim() === cleanMyName);
+  const amIHost = isHost || (me?.isHost === true);
+  const highlightAnim = useRef(new Animated.Value(0)).current; 
+  const [highlightedCardId, setHighlightedCardId] = useState(null); 
+
+  const [userStats, setUserStats] = useState({ coins: 0, diamonds: 0 });
+  const [isFullInventoryVisible, setIsFullInventoryVisible] = useState(false); 
+
+  const [isMuted, setIsMuted] = useState(false);
+  const [isRoomReady, setIsRoomReady] = useState(false);
+
+  const [officialMemes, setOfficialMemes] = useState([]);
+  const [situationPrompts, setSituationPrompts] = useState([]);
+
+  const tickPlayer = useAudioPlayer(require('../../assets/sounds/tick.mp3'));
+  const playTickPlayer = useAudioPlayer(require('../../assets/sounds/play_tick.mp3'));
+  const swooshPlayer = useAudioPlayer(require('../../assets/sounds/swoosh.mp3'));
+  const winPlayer = useAudioPlayer(require('../../assets/sounds/win.mp3'));
+  const failPlayer = useAudioPlayer(require('../../assets/sounds/fail.mp3'));
+  const swapPlayer = useAudioPlayer(require('../../assets/sounds/card_swap.mp3'));
+  const icedPlayer = useAudioPlayer(require('../../assets/sounds/iced_magic.mp3'));
+
+  useEffect(() => {
+    const setupAudio = async () => {
+      try {
+        await setAudioModeAsync({ playsInSilentMode: true });
+      } catch (e) {
+        console.log("Ses ayarı yapılamadı:", e);
+      }
+    };
+    setupAudio();
+  }, []);
+
+  useEffect(() => {
+    const handleBackPress = () => {
+      playSound('click');
+      if (me?.id) {
+        remove(ref(database, `rooms/${roomId}/players/${me.id}`));
+      }
+      navigation.replace('Home');
+      return true; 
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+
+    return () => {
+      backHandler.remove();
+      safePause(tickPlayer);
+      safePause(playTickPlayer);
+    };
+  }, [roomId, me?.id]);
+
+  const playSound = (soundType) => {
+    if (isMuted) return;
+    try {
+      switch (soundType) {
+        case 'swoosh': swooshPlayer.seekTo(0); swooshPlayer.play(); break;
+        case 'win': winPlayer.seekTo(0); winPlayer.play(); break;
+        case 'fail': failPlayer.seekTo(0); failPlayer.play(); break;
+        case 'card_swap': swapPlayer.seekTo(0); swapPlayer.play(); break;
+        case 'iced_magic': icedPlayer.seekTo(0); icedPlayer.play(); break;
+        default: return;
+      }
+    } catch (error) {
+      console.log(`Ses efekti çalınamadı:`, error);
+    }
+  };
+
+ const toggleSound = () => {
+  const newMutedState = !isMuted;
+  setIsMuted(newMutedState);
+  
+  if (newMutedState) {
+    safePause(tickPlayer); 
+    safePause(playTickPlayer);
+  }
+};
+
+  useEffect(() => {
+    if (!me?.id || !roomId) return;
+    const ready =
+      officialMemes.length > 0 &&
+      situationPrompts.length > 0 &&
+      !!currentPrompt &&
+      currentPrompt !== 'Durum bekleniyor...' &&
+      myHand.length > 0;
+    update(ref(database, `rooms/${roomId}/players/${me.id}`), { ready }).catch((e) =>
+      console.log('[READY] yazma hatası:', e?.message || e)
+    );
+  }, [me?.id, roomId, officialMemes.length, situationPrompts.length, currentPrompt, myHand.length]);
+
+  useEffect(() => {
+    if (!players.length || !me?.id || !roomId) return;
+    const realPlayers = players.filter((p) => p.name && p.name !== 'Bekleniyor...');
+    if (realPlayers.length < 2) return; 
+
+    const currentHost = realPlayers.find((p) => p.isHost === true);
+    if (currentHost) return; 
+
+    const sorted = [...realPlayers].sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+    const elected = sorted[0];
+    if (elected?.id === me.id) {
+      console.log('[HOST] Yeni host seçildi:', me.id);
+      update(ref(database, `rooms/${roomId}/players/${me.id}`), { isHost: true }).catch((e) =>
+        console.log('[HOST] yazma hatası:', e?.message || e)
+      );
+    }
+  }, [players, me?.id, roomId]);
+
+  useEffect(() => {
+    if (!players.length || roomClosedAlertShownRef.current) {
+      prevPlayersRef.current = players;
+      return;
+    }
+
+    const prev = prevPlayersRef.current;
+    const prevReal = prev.filter((p) => p.name && p.name !== 'Bekleniyor...');
+    const currentReal = players.filter((p) => p.name && p.name !== 'Bekleniyor...');
+
+    if (prevReal.length >= 2 && currentReal.length === 1) {
+      const lone = currentReal[0];
+      const meIsLone = lone?.name?.trim() === cleanMyName;
+      const prevHost = prev.find((p) => p.isHost);
+      const hostStillHere = currentReal.some((p) => p.id === prevHost?.id);
+
+      if (meIsLone) {
+        roomClosedAlertShownRef.current = true;
+        const title = prevHost && !hostStillHere ? 'Oda Kapandı' : 'Yalnız Kaldın';
+        const message =
+          prevHost && !hostStillHere
+            ? 'Oda sahibi oyundan çıktı. Ana sayfaya dönülüyor.'
+            : 'Diğer oyuncular oyundan çıktı. Ana sayfaya dönülüyor.';
+        Alert.alert(
+          title,
+          message,
+          [
+            {
+              text: 'Tamam',
+              onPress: () => {
+                if (me?.id) {
+                  remove(ref(database, `rooms/${roomId}/players/${me.id}`));
+                }
+                navigation.replace('Home');
+              },
+            },
+          ],
+          { cancelable: false }
+        );
+      }
+    }
+
+    prevPlayersRef.current = players;
+  }, [players, cleanMyName, me?.id, roomId, navigation]);
+
+  useEffect(() => {
+    if (amIHost && currentPrompt === "Durum bekleniyor..." && situationPrompts.length > 0 && roomId) {
+      let randomPrompt;
+      let attempts = 0;
+      do {
+        randomPrompt = situationPrompts[Math.floor(Math.random() * situationPrompts.length)];
+        attempts++;
+      } while (usedPromptsRef.current.includes(randomPrompt) && attempts < 50);
+      
+      update(ref(database, `rooms/${roomId}`), { currentPrompt: randomPrompt });
+    }
+  }, [amIHost, currentPrompt, situationPrompts, roomId]);
+
+ useEffect(() => {
+    const fetchFirebaseData = async () => {
+      try {
+        const memesCol = collection(db, 'memes');
+        const memesSnapshot = await getDocs(memesCol);
+        const memesList = memesSnapshot.docs.map(doc => ({
+          ...doc.data(),
+          id: doc.id
+        }));
+        setOfficialMemes(memesList);
+
+        const situationsCol = collection(db, 'situations');
+        const situationsSnapshot = await getDocs(situationsCol);
+        const prompts = situationsSnapshot.docs.map(doc => doc.data().content);
+        setSituationPrompts(prompts);
+
+      } catch (error) {
+        console.error("Firebase veri çekme hatası:", error);
+      }
+    };
+
+    fetchFirebaseData();
+  }, []);
+
+  useEffect(() => {
+    const connectedRef = ref(database, ".info/connected");
+    const unsubscribeConnection = onValue(connectedRef, (snap) => {
+      const isOnline = snap.val() === true;
+      setIsConnected(isOnline);
+
+      if (isOnline && roomId && me?.id) { 
+        const myPlayerRef = ref(database, `rooms/${roomId}/players/${me.id}`);
+        update(myPlayerRef, {
+          name: cleanMyName,
+          avatar: myAvatarSeed,
+        }).catch(err => console.log("Yeniden bağlanma hatası:", err));
+
+        onDisconnect(myPlayerRef).remove();
+      }
+    });
+    return () => unsubscribeConnection();
+  }, [roomId, cleanMyName, myAvatarSeed, me?.id]);
+
+  const stateRefs = useRef({ hasPlayed, votedCardId, myHand, playedCards });
+  useEffect(() => {
+    stateRefs.current = { hasPlayed, votedCardId, myHand, playedCards };
+  }, [hasPlayed, votedCardId, myHand, playedCards]);
+
+  useEffect(() => {
+    const lockScreen = async () => await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    lockScreen();
+    
+    if (roomId && officialMemes.length > 0 && situationPrompts.length > 0) { 
+      const playersRef = ref(database, `rooms/${roomId}/players`);
+      const unsubscribePlayers = onValue(playersRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const rawPlayers = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+          const uniquePlayers = [];
+          const seenNames = new Set();
+          rawPlayers.forEach(p => {
+            const pName = p.name?.trim();
+            if (!seenNames.has(pName)) {
+              seenNames.add(pName);
+              uniquePlayers.push(p);
+            }
+          });
+          setPlayers(uniquePlayers);
+          setIsRoomReady(true);
+          setScores(prevScores => {
+            const newScores = { ...prevScores };
+            uniquePlayers.forEach(p => { if (newScores[p.name] === undefined) newScores[p.name] = 0; });
+            return newScores;
+          });
+
+          if (!initialHandDrawn.current) {
+            let availableMemes = officialMemes.filter(m => !usedMemesRef.current.includes(m.url));
+            if (availableMemes.length < 5) {
+              usedMemesRef.current = [];
+              availableMemes = officialMemes;
+            }
+            const shuffled = [...availableMemes].sort(() => Math.random() - 0.5);
+            const newHand = shuffled.slice(0, 5).map(c => {
+              usedMemesRef.current.push(c.url); 
+              return { ...c, id: Math.random().toString() };
+            });
+            setMyHand(newHand);
+            initialHandDrawn.current = true;
+          }
+        }
+      });
+
+      const roomRef = ref(database, `rooms/${roomId}`);
+
+    const unsubscribeRoom = onValue(roomRef, (snapshot) => {
+        const roomData = snapshot.val();
+        if (roomData) {
+          setIsTimeFrozen(roomData.isGlobalFrozen || false);
+          
+          const newRound = roomData.round;
+         if (newRound && newRound > currentRoundRef.current) {
+               currentRoundRef.current = newRound;
+               setCurrentRound(newRound); 
+               startNextRound(); 
+          }
+          
+          if (roomData.currentPrompt) {
+              setCurrentPrompt(roomData.currentPrompt);
+              if (!usedPromptsRef.current.includes(roomData.currentPrompt)) {
+                usedPromptsRef.current.push(roomData.currentPrompt);
+              }
+          }
+        }
+      });
+      Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
+      return () => { unsubscribePlayers(); unsubscribeRoom(); ScreenOrientation.unlockAsync(); };
+    }
+  }, [roomId, officialMemes, situationPrompts]); 
+
+  useEffect(() => {
+    if (phase === 'PLAYING' && !isTimeFrozen) {
+      Animated.loop(Animated.timing(rotateAnim, { toValue: 1, duration: 3000, useNativeDriver: true })).start();
+    } else {
+      rotateAnim.setValue(0);
+    }
+  }, [phase, isTimeFrozen]);
+
+  useEffect(() => {
+    let timer;
+    const totalPhaseTime = 10;
+    const activePhases = ['READING', 'PLAYING', 'VOTING'];
+
+    if (activePhases.includes(phase)) {
+      Animated.timing(timeLeftAnim, {
+        toValue: timeLeft / totalPhaseTime,
+        duration: 1000,
+        useNativeDriver: false,
+      }).start();
+    }
+
+    const isFullyLoaded = isRoomReady && officialMemes.length > 0 && situationPrompts.length > 0;
+
+    if (!isFullyLoaded) return;
+
+    const realPlayers = players.filter((p) => p.name && p.name !== 'Bekleniyor...');
+    const allReady = forceTimerOpen || realPlayers.length <= 1 || realPlayers.every((p) => p.ready === true);
+    
+    if (activePhases.includes(phase) && !allReady) {
+      console.log('[TIMER] beklemede — ready durumu:', realPlayers.map((p) => `${p.name}:${p.ready}`));
+    }
+
+    if (timeLeft > 0 && activePhases.includes(phase) && !isTimeFrozen && allReady) {
+      if (phase === 'PLAYING' && timeLeft === 3 && !isMuted) {
+        tickPlayer.seekTo(0);
+        tickPlayer.play();
+      }
+      timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+   } else if (timeLeft === 0 && activePhases.includes(phase)) {
+      tickPlayer.pause();
+      if (phase === 'READING') {
+        timeLeftAnim.setValue(1);
+        setPhase('PLAYING');
+        setTimeLeft(10);
+      }
+      else if (phase === 'PLAYING') {
+        if (!stateRefs.current.hasPlayed && stateRefs.current.myHand.length > 0) {
+          const handNow = [...stateRefs.current.myHand]; 
+          const randomIndex = Math.floor(Math.random() * handNow.length);
+          const randomCard = handNow[randomIndex]; 
+
+          handlePlayCard(randomCard.id); 
+        }
+        setPhase('WAITING_CARDS'); 
+      }
+      else if (phase === 'VOTING') {
+        if (!stateRefs.current.votedCardId && stateRefs.current.playedCards.length > 0) {
+          const opponentCards = stateRefs.current.playedCards.filter(c => !c.isMine);
+          if (opponentCards.length > 0) {
+            const randomOpponent = opponentCards[Math.floor(Math.random() * opponentCards.length)];
+            handleVote(randomOpponent.id);
+          }
+        }
+        setPhase('WAITING_VOTES'); 
+      }
+    }
+    return () => clearTimeout(timer);
+  }, [timeLeft, phase, isTimeFrozen, isRoomReady, officialMemes.length, situationPrompts.length, players, forceTimerOpen]);
+
+  useEffect(() => {
+    setForceTimerOpen(false);
+    
+    const activePhases = ['READING', 'PLAYING', 'VOTING'];
+    if (!activePhases.includes(phase)) return;
+
+    const delay = (currentRound === 1) ? 5000 : 3000;
+
+    const t = setTimeout(() => {
+      console.log(`[TIMER] Zorla başlatılıyor. Tur: ${currentRound}, Gecikme: ${delay}ms`);
+      setForceTimerOpen(true);
+    }, delay);
+
+    return () => clearTimeout(t);
+  }, [phase, currentRound]); 
+
+  useEffect(() => {
+    if (phase === 'WAITING_CARDS' && officialMemes.length > 0) { 
+      const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...');
+      const allPlayed = actualPlayers.length > 0 && actualPlayers.every(p => p.playedCard);
+      
+      if (allPlayed) {
+        moveToVotingPhase();
+      } else {
+        const hostTimeout = setTimeout(() => {
+          if (amIHost) {
+            actualPlayers.forEach(p => {
+             if (!p.playedCard) {
+                let availableMemes = officialMemes.filter(m => !usedMemesRef.current.includes(m.url));
+                if(availableMemes.length === 0) availableMemes = officialMemes;
+                const randomMeme = availableMemes[Math.floor(Math.random() * availableMemes.length)]; 
+                usedMemesRef.current.push(randomMeme.url);
+
+                const autoCard = { ...randomMeme, id: Math.random().toString() };
+                update(ref(database, `rooms/${roomId}/players/${p.id}`), { playedCard: autoCard });
+              }
+            });
+          }
+        }, 2500);
+
+        const forceTimeout = setTimeout(() => {
+          moveToVotingPhase();
+        }, 4000);
+
+        return () => {
+          clearTimeout(hostTimeout);
+          clearTimeout(forceTimeout);
+        };
+      }
+    }
+  }, [phase, players, amIHost, roomId, officialMemes]);
+
+  useEffect(() => {
+    if (phase === 'WAITING_VOTES') {
+      const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...');
+      const allVoted = actualPlayers.length > 0 && actualPlayers.every(p => p.votedFor);
+      
+      if (allVoted) {
+        calculateResults();
+      } else {
+        const hostTimeout = setTimeout(() => {
+          if (amIHost) {
+            actualPlayers.forEach(p => {
+              if (!p.votedFor && stateRefs.current.playedCards.length > 0) {
+                const opponentCards = stateRefs.current.playedCards.filter(c => c.owner !== p.name);
+                
+                if (opponentCards.length > 0) {
+                  const shuffledOpponents = [...opponentCards].sort(() => Math.random() - 0.5);
+                  const randomCard = shuffledOpponents[0];
+                  update(ref(database, `rooms/${roomId}/players/${p.id}`), { votedFor: randomCard.id });
+                }
+              }
+            });
+          }
+        }, 2500);
+        const forceTimeout = setTimeout(() => {
+          calculateResults();
+        }, 4000);
+        return () => {
+          clearTimeout(hostTimeout);
+          clearTimeout(forceTimeout);
+        };
+      }
+    }
+  }, [phase, players, amIHost, roomId]);
+
+  useEffect(() => {
+    const toggleOrientation = async () => {
+      try {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      } catch (error) {
+        console.log("Oryantasyon kilitlenemedi:", error);
+      }
+    };
+    toggleOrientation();
+    return () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    });
+    const unsubscribeBlur = navigation.addListener('blur', () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    });
+    return () => {
+      unsubscribe();
+      unsubscribeBlur();
+    };
+  }, [navigation]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const userRef = doc(db, 'users', user.uid);
+
+    const unsubscribe = onSnapshot(
+      userRef, 
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          
+          setIsGuestUser(data.isGuest || false);
+          setGuestMatches(data.guestMatchesLeft ?? 0);
+
+          setJokerInventory({
+            joker_skip: data.joker_skip || 0,
+            joker_double: data.joker_double || 0,
+            joker_freeze: data.joker_freeze || 0,
+          });
+
+          setUserStats({
+            coins: data.coins || 0,
+            diamonds: data.diamonds || 0,
+          });
+        }
+      },
+      (error) => {
+        console.log("Dinleyici yetkisi düştü (Çıkış yapıldı):", error.code);
+      }
+    );
+
+    return () => unsubscribe(); 
+  }, []);
+
+  const prevHandLengthRef = useRef(0); 
+
+  // 🚀 YENİ VE KUSURSUZ MİSAFİR HAKKI DÜŞÜRME SİSTEMİ
+  // Mantık: Her "el" değil, her "maç" (Eline tam 5 yeni kart geldiğinde) sadece 1 kere düşer!
+  useEffect(() => {
+    const deductGuestMatch = async () => {
+      const user = auth.currentUser;
+      
+      if (user && isGuestUser) {
+        try {
+          const userRef = doc(db, 'users', user.uid);
+          await updateDoc(userRef, {
+            guestMatchesLeft: increment(-1)
+          });
+          console.log("YENİ MAÇ BAŞLADI (5 Kart Dağıtıldı): Misafir hakkı 1 azaltıldı!");
+        } catch (error) {
+          console.error("Hak düşerken hata:", error);
+        }
+      }
+    };
+
+    // Eğer önceki elde kart yoksa (0) ve şimdi tam 5 kart dağıtıldıysa, bu YENİ BİR MAÇTIR!
+    if (prevHandLengthRef.current === 0 && myHand.length === 5) {
+      deductGuestMatch();
+    }
+
+    // Her durumda son el sayısını kaydet
+    prevHandLengthRef.current = myHand.length;
+  }, [myHand.length, isGuestUser]);
+
+
+  const handleUseJoker = async (jokerId) => {
+    if (jokerId === 'joker_skip' && !selectedCard) {
+      alert("Önce değiştirmek istediğin kartı seç!");
+      return; 
+    }
+
+    if (jokerInventory[jokerId] <= 0) return; 
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    const user = auth.currentUser;
+    if (user) {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, { [jokerId]: increment(-1) });
+    }
+
+    switch (jokerId) {
+    case 'joker_skip':
+        playSound('card_swap');
+        let availableSkipMemes = officialMemes.filter(m => !usedMemesRef.current.includes(m.url));
+        if(availableSkipMemes.length === 0) availableSkipMemes = officialMemes;
+        const randomCard = availableSkipMemes[Math.floor(Math.random() * availableSkipMemes.length)]; 
+        usedMemesRef.current.push(randomCard.url);
+        
+        const newCardId = Math.random().toString();
+        setMyHand(prev => prev.map(c => c.id === selectedCard ? {...randomCard, id: newCardId} : c));
+        setHighlightedCardId(newCardId);
+        triggerHighlight();
+        setSelectedCard(null);
+        break;
+
+      case 'joker_double':
+        playSound('card_swap');
+        const currentHandSize = myHand.length;
+        let availableDoubleMemes = officialMemes.filter(m => !usedMemesRef.current.includes(m.url));
+        if(availableDoubleMemes.length < currentHandSize) {
+          usedMemesRef.current = [];
+          availableDoubleMemes = officialMemes;
+        }
+        const newHand = [...availableDoubleMemes] 
+          .sort(() => Math.random() - 0.5)
+          .slice(0, currentHandSize)
+          .map(c => {
+             usedMemesRef.current.push(c.url);
+             return { ...c, id: Math.random().toString() };
+          });
+        setMyHand(newHand);
+        setHighlightedCardId('ALL');
+        triggerHighlight();
+        break;
+
+       case 'joker_freeze':
+        playSound('iced_magic');
+        update(ref(database, `rooms/${roomId}`), { isGlobalFrozen: true });
+        setTimeout(() => {
+          update(ref(database, `rooms/${roomId}`), { isGlobalFrozen: false });
+        }, 5000);
+        break;
+    }
+    
+    setIsJokerMenuVisible(false);
+  };
+
+  const triggerHighlight = () => {
+    highlightAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(highlightAnim, { toValue: 1, duration: 400, useNativeDriver: false }),
+      Animated.timing(highlightAnim, { toValue: 0, duration: 800, useNativeDriver: false }),
+    ]).start(() => setHighlightedCardId(null));
+  };
+
+  const handlePlayCard = (autoCardId = null) => {
+      const isEvent = autoCardId && typeof autoCardId === 'object' && autoCardId.nativeEvent;
+      const explicitCardId = (!isEvent && autoCardId !== null && autoCardId !== undefined) ? autoCardId : null;
+      const targetCardId = explicitCardId !== null ? explicitCardId : selectedCard;
+
+      if (stateRefs.current.hasPlayed || !targetCardId) return; 
+
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      playSound('swoosh');
+      tickPlayer.pause();
+
+      const cardToPlay = stateRefs.current.myHand.find(c => c.id === targetCardId);
+      if (!cardToPlay) return;
+      
+      setStagedCard(cardToPlay); 
+      setMyHand(prev => prev.filter(c => c.id !== targetCardId)); 
+      setSelectedCard(null);
+      setHasPlayed(true); 
+      setIsTimeFrozen(false); 
+
+      if (me?.id) {
+        update(ref(database, `rooms/${roomId}/players/${me.id}`), { playedCard: cardToPlay });
+      }
+    };
+
+  const moveToVotingPhase = () => {
+      const actualPlayers = players.filter(p => p.name !== 'Bekleniyor...' && p.playedCard);
+      const tableCards = actualPlayers.map(p => ({
+          ...p.playedCard,
+          isMine: p.name?.trim() === cleanMyName,
+          owner: p.name,
+          id: p.playedCard.id + '_' + p.name 
+      }));
+
+      const shuffledCards = tableCards.sort(() => Math.random() - 0.5);
+      setPlayedCards(shuffledCards);
+      
+      setPhase('VOTING');
+      setTimeLeft(10);
+      Animated.sequence([
+        Animated.timing(announcementAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+        Animated.delay(1200),
+        Animated.timing(announcementAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
+      ]).start();
+    };
+
+  const handleVote = (cardId) => {
+      if (stateRefs.current.votedCardId || phase !== 'VOTING') return; 
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      setVotedCardId(cardId);
+      if (me?.id) {
+          update(ref(database, `rooms/${roomId}/players/${me.id}`), { votedFor: cardId });
+      }
+    };
+
+ const calculateResults = () => {
+      if (isCalculatingRef.current) return; 
+      isCalculatingRef.current = true;
+
+      setPhase('ROUND_ENDED');
+      const voteCounts = {};
+      players.forEach(p => {
+          if (p.votedFor) { voteCounts[p.votedFor] = (voteCounts[p.votedFor] || 0) + 1; }
+      });
+
+      if (Object.keys(voteCounts).length === 0 && stateRefs.current.playedCards.length > 0) {
+          const sortedCards = [...stateRefs.current.playedCards].sort((a, b) => a.id.localeCompare(b.id));
+          voteCounts[sortedCards[0].id] = 1;
+      }
+
+      const roundPoints = {};
+      stateRefs.current.playedCards.forEach(card => {
+          const votes = voteCounts[card.id] || 0;
+          if (votes > 0) {
+              roundPoints[card.owner] = (roundPoints[card.owner] || 0) + votes;
+          }
+      });
+
+      const finalScores = { ...scores };
+      Object.keys(roundPoints).forEach(owner => {
+          finalScores[owner] = (finalScores[owner] || 0) + roundPoints[owner];
+      });
+      setScores(finalScores); 
+
+      let maxVotes = 0;
+      let roundWinners = [];
+      Object.keys(roundPoints).forEach(owner => {
+          if (roundPoints[owner] > maxVotes) {
+              maxVotes = roundPoints[owner];
+              roundWinners = [owner];
+          } else if (roundPoints[owner] === maxVotes && maxVotes > 0) {
+              roundWinners.push(owner);
+          }
+      });
+
+      let bannerText = "HESAPLANIYOR...";
+      let isMeRoundWinner = false;
+
+      if (roundWinners.length === 1) {
+          if (roundWinners[0]?.trim() === cleanMyName) {
+              bannerText = "RAUNDU KAZANDIN!";
+              isMeRoundWinner = true;
+          } else {
+              bannerText = `${roundWinners[0].toUpperCase()} KAZANDI!`;
+          }
+      } else if (roundWinners.length > 1) {
+          if (roundWinners.includes(cleanMyName)) {
+              bannerText = "BERABERE! (SEN DE KAZANDIN)";
+              isMeRoundWinner = true;
+          } else {
+              bannerText = "RAUND BERABERE!"; 
+          }
+      }
+
+      setWinnerName(bannerText);
+
+      if (isMeRoundWinner) {
+        playSound('win');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        playSound('fail');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+
+      setRoundEnded(true);
+      Animated.spring(announcementAnim, { toValue: 1, useNativeDriver: true }).start();
+
+      const isGameOver = stateRefs.current.myHand.length === 0;
+
+      if (isGameOver) {
+        let gameMaxScore = 0;
+        let gameWinners = [];
+        Object.keys(finalScores).forEach(owner => {
+          if (finalScores[owner] > gameMaxScore) {
+            gameMaxScore = finalScores[owner];
+            gameWinners = [owner];
+          } else if (finalScores[owner] === gameMaxScore && gameMaxScore > 0) {
+            gameWinners.push(owner);
+          }
+        });
+
+        if (gameWinners.includes(cleanMyName)) {
+          const user = auth.currentUser;
+          if (user) {
+            const userRef = doc(db, 'users', user.uid);
+            (async () => {
+              try {
+                const snap = await getDoc(userRef);
+                if (snap.exists()) {
+                  const data = snap.data();
+                  const today = new Date().toISOString().split('T')[0];
+                  const lastDate = data.lastMissionDate;
+
+                  if (lastDate !== today) {
+                    await updateDoc(userRef, {
+                      wonHearts: 1,
+                      lastMissionDate: today,
+                      isBoxOpened: false,
+                    });
+                  } else {
+                    await updateDoc(userRef, { wonHearts: increment(1) });
+                  }
+                }
+              } catch (e) {
+                console.log('[HATA] Kalp güncellenemedi:', e.message);
+              }
+            })();
+          }
+        }
+
+        setTimeout(() => {
+           isCalculatingRef.current = false;
+        }, 4000);
+
+      } else {
+        setTimeout(() => {
+          if (amIHost) {
+            handleHostNewRound();
+          }
+          isCalculatingRef.current = false;
+        }, 4000);
+      }
+  };
+
+  const handleHostNewRound = () => {
+    if (amIHost && roomId && situationPrompts.length > 0) { 
+      const nextRound = currentRoundRef.current + 1;
+      
+      let randomPrompt;
+      let attempts = 0;
+      do {
+        randomPrompt = situationPrompts[Math.floor(Math.random() * situationPrompts.length)];
+        attempts++;
+      } while (usedPromptsRef.current.includes(randomPrompt) && attempts < 50);
+      
+      const newRoundUpdates = { round: nextRound, currentPrompt: randomPrompt };
+      players.forEach(p => {
+        if (p.id) {
+          newRoundUpdates[`players/${p.id}/playedCard`] = null;
+          newRoundUpdates[`players/${p.id}/votedFor`] = null;
+          newRoundUpdates[`players/${p.id}/ready`] = false;
+        }
+      });
+      update(ref(database, `rooms/${roomId}`), newRoundUpdates);
+    }
+  };
+  
+  const startNextRound = () => {
+    isCalculatingRef.current = false;
+      if (me?.id) { 
+        update(ref(database, `rooms/${roomId}/players/${me.id}`), { playedCard: null, votedFor: null }); 
+      }
+      
+     if (stateRefs.current.myHand.length === 0 && officialMemes.length > 0) { 
+        setScores(prevScores => {
+          const resetScores = {};
+          Object.keys(prevScores).forEach(name => { resetScores[name] = 0; });
+          return resetScores;
+        });
+
+        let availableMemes = officialMemes.filter(m => !usedMemesRef.current.includes(m.url));
+        if (availableMemes.length < 5) {
+          usedMemesRef.current = [];
+          availableMemes = officialMemes;
+        }
+        const shuffled = [...availableMemes].sort(() => Math.random() - 0.5);
+        const newHand = shuffled.slice(0, 5).map(c => {
+          usedMemesRef.current.push(c.url);
+          return { ...c, id: Math.random().toString() };
+        });
+        setMyHand(newHand);
+      }
+      
+     setHasPlayed(false);
+      setStagedCard(null);
+      setPlayedCards([]);
+      setVotedCardId(null);
+      setRoundEnded(false);
+      setWinnerName("");
+      setPhase('PLAYING');
+      setTimeLeft(10);
+      
+      stateRefs.current.hasPlayed = false;
+      stateRefs.current.votedCardId = null;
+      stateRefs.current.playedCards = [];
+      
+      announcementAnim.setValue(0); popAnim.setValue(0); flipAnim.setValue(0);
+      Animated.spring(popAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }).start();
+    };
+
+  const PlayerSlot = ({ name, score, positionStyle, avatarAnimal, badgeColor, slotId, fullNameRaw, tooltipBelow }) => {
+    const isPlaceholder = name.includes('Bekleniyor');
+    const showTip = !isPlaceholder && hoveredNameSlotId === slotId;
+    return (
+      <View style={[styles.playerSlot, positionStyle]}>
+        <TouchableOpacity
+          style={styles.avatarContainer}
+          onPress={() => !isPlaceholder && showNameTooltip(slotId)}
+          activeOpacity={0.7}
+          disabled={isPlaceholder}
+        >
+          {showTip && (
+            <View
+              style={[
+                styles.nameTooltip,
+                { backgroundColor: badgeColor },
+                tooltipBelow && styles.nameTooltipBelow,
+              ]}
+            >
+              <Text style={styles.nameTooltipText} numberOfLines={2}>{fullNameRaw}</Text>
+              <View
+                style={[
+                  tooltipBelow ? styles.nameTooltipArrowUp : styles.nameTooltipArrow,
+                  tooltipBelow
+                    ? { borderBottomColor: badgeColor }
+                    : { borderTopColor: badgeColor },
+                ]}
+              />
+            </View>
+          )}
+          {isPlaceholder ? (
+            <View style={[styles.avatar, { borderColor: badgeColor, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center' }]}>
+              <Ionicons name="person-outline" size={30} color="#9CA3AF" />
+            </View>
+          ) : (
+            <Image
+              source={{ uri: `https://api.dicebear.com/7.x/adventurer/png?seed=${avatarAnimal}&backgroundColor=ffffff` }}
+              style={[styles.avatar, { borderColor: badgeColor, backgroundColor: '#FFF' }]}
+              contentFit="cover"
+              transition={250}
+              cachePolicy="memory-disk"
+            />
+          )}
+          
+          <View style={[styles.nameBadge, { backgroundColor: badgeColor, flexDirection: 'row', alignItems: 'center', maxWidth: '100%', paddingHorizontal: 4 }]}>
+            <Text style={[styles.playerName, { flexShrink: 1 }]} numberOfLines={1} ellipsizeMode="tail">
+              {name}
+            </Text>
+            {!isPlaceholder && (
+              <Text style={[styles.playerName, { flexShrink: 0, fontWeight: '900', marginLeft: 2 }]}>
+                : {score}
+              </Text>
+            )}
+          </View>
+          
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const cardScale = flipAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }); 
+  const cardRotate = flipAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }); 
+
+  let opponents = players.filter(p => p.name?.trim() !== cleanMyName);
+  while (opponents.length < 3) {
+    opponents.push({ id: `empty_${opponents.length}`, name: 'Bekleniyor...', avatar: 'empty' });
+  }
+
+  const opponentPositions = [styles.topPlayer, styles.leftPlayer, styles.rightPlayer];
+  const opponentColors = ["#E5E7EB", "#E5E7EB", "#E5E7EB"];
+  
+  if (!isRoomReady || officialMemes.length === 0 || situationPrompts.length === 0) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar hidden />
+        <View style={styles.ambientGlowTop} />
+        <View style={styles.ambientGlowBottom} />
+
+        <View style={styles.premiumLoadingIsland}>
+          <View style={styles.floatingDeckContainer}>
+            <View style={[styles.decoCard, styles.decoCardLeft]} />
+            <View style={[styles.decoCard, styles.decoCardRight]} />
+            <View style={[styles.decoCard, styles.decoCardCenter]}>
+              <ActivityIndicator size="large" color="#FF69EB" />
+            </View>
+          </View>
+
+          <Text style={styles.loadingTitlePro}>MASA KURULUYOR</Text>
+          
+          <View style={styles.loadingPillPro}>
+            <Ionicons name="sparkles" size={14} color="#FF8A00" style={{ marginRight: 6 }} />
+            <Text style={styles.loadingSubtitlePro}>KARTLAR DAĞITILIYOR...</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+      <View style={styles.container}>
+        <StatusBar hidden />
+        <View style={styles.whiteBackground} />
+         <JokerModal 
+            visible={isFullInventoryVisible} 
+            onClose={() => setIsFullInventoryVisible(false)} 
+            onUseJoker={(id) => handleUseJoker(id)}
+            selectedCard={selectedCard}
+          />
+
+          {isJokerMenuVisible && (
+            <TouchableOpacity 
+              activeOpacity={1}
+              style={[StyleSheet.absoluteFillObject, { zIndex: 998 }]}
+              onPress={() => setIsJokerMenuVisible(false)}
+            />
+          )}
+
+        <View style={[styles.topBarContainer, { zIndex: 50, marginLeft: Math.max(insets.left, 15) }]}>
+          <LinearGradient 
+            colors={['rgba(255,255,255,0.95)', 'rgba(245,245,250,0.9)']} 
+            style={[styles.homeStylePill, { paddingHorizontal: 16, paddingVertical: 8 }]}
+          >
+            <TouchableOpacity 
+              activeOpacity={0.7} 
+              onPress={() => {
+                playSound('click');
+                if (me?.id) {
+                  remove(ref(database, `rooms/${roomId}/players/${me.id}`));
+                }
+                navigation.replace('Home');
+              }}
+            >
+           <View style={{ transform: [{ scaleX: -1 }] }}>
+            <Ionicons name="exit-outline" size={22} color="#FF4D00" style={{ textShadowColor: 'rgba(255, 59, 48, 0.5)', textShadowRadius: 8 }} />
+          </View>
+            </TouchableOpacity>
+
+            <View style={[styles.verticalDivider, { marginHorizontal: 12 }]} />
+
+           <TouchableOpacity activeOpacity={0.7} onPress={toggleSound}>
+                <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={22} color={isMuted ? "#FF0404E8" : "#FFD500E8"} />
+           </TouchableOpacity>
+
+            <View style={[styles.verticalDivider, { marginHorizontal: 12 }]} />
+
+            <TouchableOpacity activeOpacity={0.7} onPress={() => setIsFullInventoryVisible(true)}>
+               <Ionicons name="cart" size={22} color='#FF00D6' style={{ textShadowColor: 'rgba(0, 229, 255, 0.5)', textShadowRadius: 8 }} />
+            </TouchableOpacity>
+          </LinearGradient>
+        </View>
+
+        <View style={[styles.hudWrapper, { paddingRight: Math.max(insets.right, 10) }]}>
+          <View style={styles.hudContainer}>
+            <TouchableOpacity 
+              activeOpacity={0.7} 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setIsJokerMenuVisible(!isJokerMenuVisible);
+              }}
+              style={{ marginBottom: isJokerMenuVisible ? 10 : 0 }} 
+            >
+               <Ionicons name={isJokerMenuVisible ? "close-circle" : "flash"} size={30} color="#FF00D6" style={styles.hudTitleIcon} />
+            </TouchableOpacity>
+
+            {isJokerMenuVisible && (
+              <View style={{ alignItems: 'center' }}>
+                {[
+                  { id: 'joker_skip', logo: require('../../assets/joker1.png'), color: '#FF69EB' },
+                  { id: 'joker_double', logo: require('../../assets/joker2.png'), color: '#FF8A00' },
+                  { id: 'joker_freeze', logo: require('../../assets/joker3.png'), color: '#00E5FF' }
+                ].map((joker, index) => { 
+                  const currentCount = jokerInventory[joker.id] || 0; 
+                  const isDepleted = currentCount <= 0;
+                  return (
+                    <View key={joker.id || index} style={[styles.jokerIconWrapper, { marginVertical: 5 }]}> 
+                      <TouchableOpacity 
+                        activeOpacity={0.7} 
+                        disabled={isDepleted} 
+                        onPress={() => handleUseJoker(joker.id)} 
+                        style={[styles.jokerButton, { shadowColor: joker.color, opacity: isDepleted ? 0.3 : 1 }]}
+                      >
+                      <Image source={joker.logo} style={styles.jokerLogo} contentFit="contain" transition={200} priority="high" cachePolicy="memory" />
+                        {!isDepleted && (
+                          <View style={[styles.jokerBadge, { backgroundColor: joker.color }]}>
+                            <Text style={styles.jokerBadgeText}>{currentCount}</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        </View>
+        
+        <Animated.View pointerEvents="none" style={[styles.announcementBanner, { transform: [{ translateX: announcementAnim.interpolate({ inputRange: [0, 1], outputRange: [-width, 0] }) }] }]}>
+          <LinearGradient colors={['transparent', roundEnded ? '#FF8000' : '#FF4EE7', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.bannerGradient}>
+            <Text style={[styles.announcementText, roundEnded && styles.announcementTextWinner]} numberOfLines={1} adjustsFontSizeToFit>
+              {roundEnded ? winnerName : "EN İYİ MEME'İ SEÇ!"}
+            </Text>
+          </LinearGradient>
+        </Animated.View>
+
+        <View style={styles.tableContainer}>
+          <View style={styles.mainTableRim}>
+            <View style={styles.tableSurface}>
+             <Image source={require('../../assets/roomTableLogo.png')} style={styles.roomTableLogo} contentFit="contain" priority="high" cachePolicy="memory" transition={500} />
+            </View>
+
+            <PlayerSlot
+              name={me?.name || myName || 'Ben'} 
+              score={scores[me?.name || myName] || 0} 
+              fullNameRaw={me?.name || myName || 'Ben'}
+              slotId="me"
+              positionStyle={styles.bottomPlayer}
+              avatarAnimal={me?.avatar || myAvatarSeed}
+              badgeColor="#FCA9D7"
+            />
+            
+            {opponents.slice(0, 3).map((opp, idx) => (
+            <PlayerSlot
+              key={opp.id || idx}
+              name={opp.name} 
+              score={scores[opp.name] || 0} 
+              fullNameRaw={opp.name}
+              slotId={opp.id || `opp_${idx}`}
+              positionStyle={opponentPositions[idx % 3]}
+              avatarAnimal={opp.avatar}
+              badgeColor={opp.name === 'Bekleniyor...' ? opponentColors[idx % 3] : ["#FDE58E", "#FBB0B2", "#FEC994"][idx % 3]}
+              tooltipBelow={idx === 0}
+            />
+        ))}
+
+            <View style={styles.centerArea}>
+              {(phase === 'READING' || phase === 'PLAYING' || phase === 'WAITING_CARDS') && (
+              <Animated.View style={[styles.situationCardWrapper, { transform: [{ scale: popAnim }, { scale: cardScale }, { rotateY: cardRotate }] }]}>
+              <View style={styles.premiumSituationCard}>
+                {!isTimeFrozen && (phase === 'READING' || phase === 'PLAYING') && (
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      styles.situationCornerTimer,
+                      {
+                        backgroundColor: timeLeftAnim.interpolate({
+                          inputRange: [0, 0.2, 0.5, 1],
+                          outputRange: ['#FF3B30', '#FF9500', '#FFDC5E', '#FF69EB'],
+                        }),
+                      },
+                    ]}
+                  >
+                    <Text style={styles.situationCornerTimerText}>{timeLeft}</Text>
+                  </Animated.View>
+                )}
+
+                <View style={styles.cardInnerContent}>
+                  <View style={styles.premiumHeaderCentered}>
+                    <View style={styles.moodBadge}>
+                      <Text style={[styles.moodLetter, { color: '#FF69EB' }]}>M</Text>
+                      <Text style={[styles.moodLetter, { color: '#FF86C8' }]}>O</Text>
+                      <Text style={[styles.moodLetter, { color: '#FF8001' }]}>O</Text>
+                      <Text style={[styles.moodLetter, { color: '#F53BDC' }]}>D</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.premiumDivider} />
+
+                    <View style={{ flex: 1, overflow: 'hidden' }}>
+                      <ScrollView 
+                        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingVertical: 10 }}
+                        showsVerticalScrollIndicator={true}
+                        persistentScrollbar={true} 
+                        indicatorStyle="white" 
+                      >
+                        <Text style={styles.premiumText} adjustsFontSizeToFit={true} minimumFontScale={0.8}>
+                          {currentPrompt}
+                        </Text>
+                            </ScrollView>
+                          </View>
+                        </View>
+                      </View>
+                    </Animated.View>
+               )}
+
+              {(phase === 'VOTING' || phase === 'WAITING_VOTES' || phase === 'ROUND_ENDED') && playedCards.length > 0 && (
+                <View style={styles.votingAreaPro}>
+                  {!roundEnded && (
+                    <View style={styles.proProgressBarContainer}>
+                      <Animated.View style={[
+                        styles.proProgressBar,
+                        {
+                          width: timeLeftAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+                          backgroundColor: timeLeftAnim.interpolate({ inputRange: [0, 0.2, 0.5, 1], outputRange: ['#FF3B30', '#FF9500', '#FFDC5E', '#FF69EB'] })
+                        }
+                      ]} />
+                    </View>
+                  )}
+                  <View style={styles.votingRowPro}>
+                    {playedCards.map((card, index) => { 
+                      const isVoted = votedCardId === card.id;
+                      return (
+                        <TouchableOpacity 
+                          key={card.id || `played_${index}`} 
+                          style={[styles.voteCardWrapper, isVoted && styles.votedCardStyle, card.isMine && styles.disabledVoteCard]} 
+                          disabled={card.isMine || votedCardId !== null || phase === 'WAITING_VOTES' || phase === 'ROUND_ENDED'} onPress={() => handleVote(card.id)} activeOpacity={0.8}
+                        >
+                         <Image source={{ uri: card.url }} style={[styles.memeImage, { backgroundColor: 'rgba(255, 0, 214, 0.05)' }]} contentFit="cover" transition={400} priority="high" cachePolicy="memory-disk" />
+                          {card.isMine && (
+                            <View style={styles.myCardOverlay}>
+                              <Ionicons name="lock-closed" size={16} color="white" />
+                              <Text style={styles.myCardText}>SENİN</Text>
+                            </View>
+                          )}
+                          {isVoted && (
+                            <View style={styles.votedBadge}>
+                              <Ionicons name="heart" size={20} color="#FF07DE" />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.bottomDeckWrapper}>
+          {!hasPlayed && (phase === 'READING' || phase === 'PLAYING') && (
+            <View style={[styles.handContainer, { width: width }]}>
+              {myHand.map((item, index) => { 
+                const rotation = (index - Math.floor(myHand.length / 2)) * 10; 
+                const isSelected = selectedCard === item.id;
+                const isThisCardHighlighted = highlightedCardId === item.id || highlightedCardId === 'ALL';
+                const borderGlow = highlightAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['rgba(255, 255, 255, 0)', 'rgba(0, 229, 255, 1)']
+                });
+                return (
+                  <TouchableOpacity 
+                    key={item.id || `hand_${index}`} 
+                    activeOpacity={1} 
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setSelectedCard(isSelected ? null : item.id);
+                    }} 
+                    style={[
+                      styles.deckCard, 
+                      { transform: [{ rotate: `${rotation}deg` }, { translateY: isSelected ? -30 : 0 }, { scale: isSelected ? 1.1 : 1 }], 
+                        zIndex: isSelected ? 100 : index, 
+                        left: (width / 2) - 55 + (index - Math.floor(myHand.length / 2)) * 50 }
+                    ]}
+                  >
+                   <Animated.View style={[
+                        styles.deckCardInner, 
+                        isThisCardHighlighted && {
+                          shadowColor: '#00E5FF',
+                          shadowOpacity: highlightAnim,
+                          shadowRadius: 15,
+                          borderColor: borderGlow,
+                          borderWidth: 2
+                        }
+                                        ]}>
+                      <Image source={{ uri: item.url }} style={styles.memeImage} contentFit="cover" transition={400} priority="high" cachePolicy="memory-disk" />
+                  </Animated.View>
+                    {isSelected && <View style={styles.selectedBorder} />}
+                    {isSelected && (
+                      <TouchableOpacity style={styles.playButton} onPress={() => handlePlayCard()} activeOpacity={0.8}>
+                        <LinearGradient colors={['#FFBF81', '#FFA3A5', '#FF69EB','#FF00D6']} style={styles.playButtonGradient}>
+                          <Text style={styles.playButtonText}>AT</Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        {roundEnded && myHand.length === 0 && (
+          <ScoreScreen 
+            scores={scores} 
+            amIHost={amIHost} 
+            isGuest={isGuestUser} 
+            guestMatchesLeft={guestMatches}
+            navigation={navigation}
+            onQuit={() => {
+              if (me?.id) remove(ref(database, `rooms/${roomId}/players/${me.id}`));
+              navigation.replace('Home');
+            }} 
+            onNewGame={handleHostNewRound} 
+          />
+        )}
+        
+        <DisconnectModal 
+          visible={!isConnected} 
+          onQuit={() => { 
+            navigation.replace('Home'); 
+          }}
+        />
+      </View>
+    );
+}
