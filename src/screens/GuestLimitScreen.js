@@ -10,9 +10,10 @@ import {
   endConnection,
   purchaseUpdatedListener,
   purchaseErrorListener,
+  getAvailablePurchases // <-- EKLENDİ: Askıdaki işlemleri bulmak için
 } from 'react-native-iap';
 import { auth, db } from '../services/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
@@ -49,9 +50,20 @@ export default function GuestLimitScreen({ navigation }) {
         if (cancelled) return;
         console.log("App Store Ürünleri:", products);
 
+        // --- EKLENDİ: Önceki askıda kalan hatalı işlemleri temizleme süpürgesi ---
+        try {
+          const pending = await getAvailablePurchases({ onlyIncludeActiveItemsIOS: false });
+          if (Array.isArray(pending) && pending.length > 0) {
+            for (const p of pending) {
+              try { await finishTransaction({ purchase: p, isConsumable: true }); } catch (e) {}
+            }
+          }
+        } catch (e) {
+          console.log("Askıdaki işlemleri temizleme hatası:", e);
+        }
+        // -------------------------------------------------------------------------
+
         purchaseUpdateSubscription = purchaseUpdatedListener(async (purchase) => {
-          // Bu ekran sadece matches_3 ürününü işler; diğer SKU'lar (Market'ten gelen
-          // elmas paketleri vb.) ilgili ekranın listener'ına bırakılır.
           if (purchase?.productId && purchase.productId !== itemSkus[0]) return;
 
           const txId = purchase?.id;
@@ -63,37 +75,49 @@ export default function GuestLimitScreen({ navigation }) {
           processedTxRef.current.add(txId);
 
           const user = auth.currentUser;
+
           if (!user) {
             try { await finishTransaction({ purchase, isConsumable: true }); } catch {}
             setLoading(false);
+            Alert.alert("Hata", "Oturum bulunamadı. Lütfen uygulamayı yeniden başlatın.");
             return;
           }
 
-          try {
-            // SANDBOX/DEV: backend doğrulaması yok — direkt guestMatchesLeft = 3 yaz.
-            // Production öncesi JWS verify backend'i geri açılmalı.
+         try {
             const userRef = doc(db, 'users', user.uid);
-            await updateDoc(userRef, { guestMatchesLeft: 3 });
+            
+            // updateDoc yerine setDoc ve { merge: true } kullanıyoruz!
+            // Bu sayede belge yoksa çökmek yerine yeni belge oluşturup içine yazar.
+            await setDoc(userRef, { guestMatchesLeft: 3 }, { merge: true });
+            
             await finishTransaction({ purchase, isConsumable: true });
             setLoading(false);
             navigation.navigate('Home');
+            
           } catch (e) {
             console.warn('Satın alma sonrası güncelleme hatası:', e);
             processedTxRef.current.delete(txId);
             setLoading(false);
-            Alert.alert('Hata', e?.message || 'İşlem tamamlanamadı.');
+            // Hatanın Firebase'den mi yoksa Apple'dan mı geldiğini görmek için e.message ekledik
+            Alert.alert('Hata Detayı', `Kayıt İşlemi Başarısız.\nSebep: ${e.message}`);
           }
         });
 
-        purchaseErrorSubscription = purchaseErrorListener((error) => {
-          console.warn('Satın alma hatası:', error);
-          setLoading(false);
-          if (error.code !== 'E_USER_CANCELLED') {
-            Alert.alert('Hata', 'İşlem sırasında bir sorun oluştu.');
-          }
-        });
+       purchaseErrorSubscription = purchaseErrorListener((error) => {
+        console.warn('Satın alma hatası:', error);
+        setLoading(false);
+        
+        // EKLENDİ: 'duplicate-purchase' hatası artık ekrana uyarı olarak çıkmayacak
+        if (
+            error.code !== 'E_USER_CANCELLED' && 
+            error.code !== 'user-cancelled' && 
+            error.code !== 'E_ALREADY_OWNED' &&
+            error.code !== 'duplicate-purchase'
+        ) {
+          Alert.alert('Hata', `İşlem sırasında bir sorun oluştu.\nDetay: ${error.message} (${error.code})`);
+        }
+      });
 
-        // Async init sırasında cleanup geçtiyse listener'ları anında kaldır
         if (cancelled) {
           purchaseUpdateSubscription?.remove();
           purchaseErrorSubscription?.remove();
@@ -127,16 +151,19 @@ export default function GuestLimitScreen({ navigation }) {
 
       await requestPurchase({
         request: {
-          ios: { sku: itemSkus[0] },
-          android: { skus: [itemSkus[0]] },
+          apple: { sku: itemSkus[0] },
+          google: { skus: [itemSkus[0]] },
         },
         type: 'in-app',
       });
-      // Apple/Google diyaloğu açıldı; kullanıcı işlemi bitirinceye kadar
-      // butonun kilitli kalması için setLoading(false) listener tarafında.
+      
     } catch (err) {
       console.log("Detaylı Hata:", err);
-      if (err?.code !== 'E_USER_CANCELLED') {
+      if (
+          err?.code !== 'E_USER_CANCELLED' && 
+          err?.code !== 'user-cancelled' &&
+          err?.code !== 'duplicate-purchase'
+      ) {
         Alert.alert("İşlem Başarısız", err?.message ?? 'Bilinmeyen hata');
       }
       setLoading(false);
@@ -186,7 +213,6 @@ export default function GuestLimitScreen({ navigation }) {
             activeOpacity={0.9}
             style={styles.mainButtonShadow}
             onPress={() => {
-                // App.js'e AuthScreen eklendiği için bu navigasyon artık sorunsuz çalışacak.
                 navigation.navigate('AuthScreen', { mode: 'register' });
             }}
             >

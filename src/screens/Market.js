@@ -84,9 +84,6 @@ export default function MarketScreen({ navigation }) {
   const [userDiamonds, setUserDiamonds] = useState(0);
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState({ title: '', message: '', buttons: [] });
-  
-  // 🚀 YENİ: Apple'dan gelen dinamik fiyatlı ürünleri tutacağımız state
-  const [iapProducts, setIapProducts] = useState([]);
 
   // Aynı transaction için listener'ın çift fire'ını engellemek için in-memory dedupe.
   const processedTxIdsRef = useRef(new Set());
@@ -211,11 +208,7 @@ export default function MarketScreen({ navigation }) {
     const setupIAP = async () => {
       try {
         await initConnection();
-        // 🚀 YENİ: Apple'dan fiyatları çek ve state'e kaydet
-        const products = await fetchProducts({ skus: PRODUCT_SKUS, type: 'in-app' });
-        if (isMounted) {
-          setIapProducts(products);
-        }
+        await fetchProducts({ skus: PRODUCT_SKUS, type: 'in-app' });
       } catch (e) {
         console.log('IAP init hatası:', e?.message || e);
       }
@@ -315,7 +308,7 @@ export default function MarketScreen({ navigation }) {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           setModalVisible(false); 
           setTimeout(() => {     
-            showAlert("Yetersiz Bakiye", "Bunun için yeterli coininiz yok. Lütfen kasanızı doldurun.");
+            showAlert("Yetersiz Bakiye", "Bunun için yeterli coininiz yok. Lütfen kasa doldurun.");
           }, 400);
         }
       } 
@@ -425,48 +418,35 @@ export default function MarketScreen({ navigation }) {
     </TouchableOpacity>
   );
 
-  const renderBoxCard = (item) => {
-    // 🚀 YENİ: Apple'dan gelen dinamik fiyatı belirle
-    let displayPrice = item.price;
-    if (item.type === 'real') {
-      const storeProduct = iapProducts.find(p => p.productId === item.productId);
-      if (storeProduct && storeProduct.localizedPrice) {
-        displayPrice = storeProduct.localizedPrice;
-      }
-    }
-
-    return (
-      <TouchableOpacity 
-        key={item.id} 
-        style={styles.boxCard} 
-        activeOpacity={0.8} 
-        onPress={() => { 
-          playSound('click');
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          // Modala gönderirken ekranda gösterilecek dinamik fiyatı da gönderiyoruz
-          setSelectedItem({ ...item, displayPrice }); 
-          setModalVisible(true); 
-        }}
-      >
-        {item.badge && (
-          <LinearGradient colors={['#FF007A', '#FF69EB']} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.badge}>
-            <Text style={styles.badgeText}>{item.badge}</Text>
-          </LinearGradient>
-        )}
-        <View style={[styles.boxIconBg, { backgroundColor: item.color + '15' }]}>
-          {renderIcon(item, 40)}
-        </View>
-        <Text style={styles.boxName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.boxAmount}>+{item.amount}</Text>
-        
-        <LinearGradient colors={[item.color, palet.orange]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={[styles.actionButton, { marginTop: 16, width: '100%' }]}>
-          {item.type !== 'real' && <FontAwesome5 name={item.type === 'coin' ? 'coins' : 'gem'} size={11} color="white" style={{ marginRight: 6 }} />}
-          {/* 🚀 YENİ: Dinamik fiyatı bas */}
-          <Text style={[styles.actionButtonText, { color: 'white' }]}>{displayPrice}</Text>
+  const renderBoxCard = (item) => (
+    <TouchableOpacity 
+      key={item.id} 
+      style={styles.boxCard} 
+      activeOpacity={0.8} 
+      onPress={() => { 
+        playSound('click');
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setSelectedItem(item); 
+        setModalVisible(true); 
+      }}
+    >
+      {item.badge && (
+        <LinearGradient colors={['#FF007A', '#FF69EB']} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.badge}>
+          <Text style={styles.badgeText}>{item.badge}</Text>
         </LinearGradient>
-      </TouchableOpacity>
-    );
-  };
+      )}
+      <View style={[styles.boxIconBg, { backgroundColor: item.color + '15' }]}>
+        {renderIcon(item, 40)}
+      </View>
+      <Text style={styles.boxName} numberOfLines={1}>{item.name}</Text>
+      <Text style={styles.boxAmount}>+{item.amount}</Text>
+      
+      <LinearGradient colors={[item.color, palet.orange]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={[styles.actionButton, { marginTop: 16, width: '100%' }]}>
+        {item.type !== 'real' && <FontAwesome5 name={item.type === 'coin' ? 'coins' : 'gem'} size={11} color="white" style={{ marginRight: 6 }} />}
+        <Text style={[styles.actionButtonText, { color: 'white' }]}>{item.price}</Text>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
 
   if (!fontsLoaded) {
     return null; 
@@ -488,7 +468,7 @@ export default function MarketScreen({ navigation }) {
             
             <View style={styles.alertButtonGroup}>
               {alertConfig.buttons.map((btn, index) => {
-                // Başlıkta hata ifade eden bir kelime geçiyorsa kırmızı, değilse orijinal Apple mavisi yap.
+                // Başlıkta hata ifade eden bir kelime geçiyorsa kırmızıt, değilse orijinal Apple mavisi yap.
                 const isError = alertConfig.title?.includes('Hata') || alertConfig.title?.includes('Yetersiz') || alertConfig.title?.includes('Başarısız');
                 const textColor = isError ? '#FF3B30' : '#007AFF'; 
                 const isBold = index === alertConfig.buttons.length - 1; // En alttaki buton Apple'da kalındır
@@ -545,7 +525,7 @@ export default function MarketScreen({ navigation }) {
         
         {/* KATEGORİ: JOKERLER */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Taktiksel Güçler</Text>
+          <Text style={styles.sectionTitle}>🃏 Taktiksel Güçler</Text>
           <Text style={styles.sectionSub}>Oyun içi coinlerinle yetenek al.</Text>
         </View>
         <FlatList
@@ -562,7 +542,7 @@ export default function MarketScreen({ navigation }) {
 
         {/* KATEGORİ: COINLER */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Kasa Doldur</Text>
+          <Text style={styles.sectionTitle}>💰 Kasa Doldur</Text>
           <Text style={styles.sectionSub}>Elmaslarını coine dönüştür.</Text>
         </View>
         <View style={styles.gridContainer}>
@@ -571,7 +551,7 @@ export default function MarketScreen({ navigation }) {
 
         {/* KATEGORİ: ELMASLAR */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Premium Elmas</Text>
+          <Text style={styles.sectionTitle}>💎 Premium Elmas</Text>
           <Text style={styles.sectionSub}>Özel teklifleri kaçırma.</Text>
         </View>
         <View style={styles.gridContainer}>
@@ -630,9 +610,8 @@ export default function MarketScreen({ navigation }) {
                       <ActivityIndicator color="white" size="small" />
                     ) : (
                       <>
-                        {/* 🚀 YENİ: Modalda dinamik fiyatı bas */}
                         <Text style={styles.buyBtnText}>
-                          {selectedItem.displayPrice || selectedItem.price} {selectedItem.type === 'real' ? 'ile Satın Al' : selectedItem.type.toUpperCase() + ' ÖDE'}
+                          {selectedItem.price} {selectedItem.type === 'real' ? 'ile Satın Al' : selectedItem.type.toUpperCase() + ' ÖDE'}
                         </Text>
                         <Ionicons name="arrow-forward" size={20} color="white" style={{ position: 'absolute', right: 24 }} />
                       </>
